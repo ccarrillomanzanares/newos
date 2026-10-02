@@ -7,8 +7,9 @@ sistema (bash, ficheros, procesos, paquetes, apps, monitor) con niveles de riesg
 ## Inicio rápido (modo dev en Ubuntu)
 ```bash
 make install-deps      # Python 3.11+, llama-cpp-python (CUDA si hay GPU), etc.
+make dev               # prueba inmediata con LLM simulado (sin modelo)
 make download-model    # models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
-make dev-agent         # AgentD en segundo plano + chat TUI
+make run               # (= make dev-agent) AgentD + chat TUI con LLaMA real
 AGENTOS_LLM_BACKEND=mock python3 -m ui.tui.chat --direct   # prueba sin modelo
 make test
 ```
