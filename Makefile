@@ -4,11 +4,8 @@ BR_VERSION ?= 2024.02.6
 BR_DIR := build/buildroot
 OUT := $(BR_DIR)/output/images
 
-.PHONY: install-deps download-model dev run dev-cloud dev-agent agentd chat test build run-qemu clean
+.PHONY: install-deps download-model run dev-cloud dev-agent agentd chat test build run-qemu clean
 
-# Prueba rápida sin modelo (LLM simulado)
-dev:
-	AGENTOS_LLM_BACKEND=mock ./scripts/run_dev.sh
 # Con el modelo GGUF real (ejecutar antes: make download-model)
 run: dev-agent
 # Ollama Cloud (necesita: export OLLAMA_API_KEY=...; modelo opcional: OLLAMA_MODEL)

@@ -4,7 +4,7 @@ Modos:
 * socket (por defecto): se conecta a AgentD por el socket UNIX.
 * directo (``--direct``): ejecuta el agente en el mismo proceso (modo dev).
 
-Uso:  python -m ui.tui.chat [--direct] [--socket RUTA] [--backend mock]
+Uso:  python -m ui.tui.chat [--direct] [--socket RUTA] [--backend openai]
 """
 
 from __future__ import annotations
@@ -323,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Chat de texto de AgentOS")
     parser.add_argument("--direct", action="store_true", help="Ejecutar el agente en proceso (sin AgentD)")
     parser.add_argument("--socket", help="Ruta del socket de AgentD")
-    parser.add_argument("--backend", choices=["auto", "llama_cpp", "openai", "mock"],
+    parser.add_argument("--backend", choices=["auto", "llama_cpp", "openai"],
                         help="Backend LLM (solo modo directo)")
     parser.add_argument("--typewriter", type=float, default=0.0, help="Retardo por carácter en segundos")
     parser.add_argument("--no-color", action="store_true")

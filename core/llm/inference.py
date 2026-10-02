@@ -5,7 +5,6 @@ Backends disponibles:
 * ``llama_cpp``: carga un GGUF en proceso con llama-cpp-python (preferido).
 * ``openai``: cualquier servidor compatible OpenAI (Ollama, llama-server, vLLM).
   Se usa como fallback automático cuando no hay modelo GGUF.
-* ``mock``: backend determinista sin modelo, para tests y demos.
 
 Todos exponen ``stream_chat(messages, params) -> AsyncIterator[str]``.
 """
@@ -223,56 +222,6 @@ class OpenAICompatBackend(LLMBackend):
 
 
 # ---------------------------------------------------------------------------
-# Backend simulado
-# ---------------------------------------------------------------------------
-
-class MockBackend(LLMBackend):
-    """Backend determinista para tests/demos sin modelo.
-
-    * Con ``script``: devuelve las respuestas en orden.
-    * Sin script: si el último mensaje es una observación de tool, la resume;
-      si no, pide un ``system_monitor`` (o ``bash_exec`` si el usuario escribe ``$ comando``).
-    """
-
-    name = "mock"
-
-    def __init__(self, script: list[str] | None = None,
-                 responder: Callable[[list[Message]], str] | None = None, chunk_size: int = 6) -> None:
-        self.script = list(script or [])
-        self.responder = responder
-        self.chunk_size = chunk_size
-        self.calls: list[list[Message]] = []
-
-    def _default(self, messages: list[Message]) -> str:
-        last = str(messages[-1].get("content", "")) if messages else ""
-        if last.startswith("[OBSERVATION"):
-            body = last.split("\n", 1)[1] if "\n" in last else last
-            return "Resultado de la herramienta:\n" + body.strip()[:800]
-        if last.strip().startswith("$ "):
-            cmd = json.dumps(last.strip()[2:])
-            return f'Ejecuto el comando.\n<tool>{{"name": "bash_exec", "args": {{"command": {cmd}}}}}</tool>'
-        return ('Voy a consultar el estado del sistema.\n'
-                '<tool>{"name": "system_monitor", "args": {"sections": ["cpu", "memory", "uptime"]}}</tool>')
-
-    async def stream_chat(self, messages: list[Message], params: GenerationParams) -> AsyncIterator[str]:
-        self.calls.append(messages)
-        if self.script:
-            text = self.script.pop(0)
-        elif self.responder:
-            text = self.responder(messages)
-        else:
-            text = self._default(messages)
-        # Simular stop sequences como haría el backend real
-        for stop in params.stop:
-            idx = text.find(stop)
-            if idx >= 0:
-                text = text[:idx]
-        for i in range(0, len(text), self.chunk_size):
-            await asyncio.sleep(0)
-            yield text[i:i + self.chunk_size]
-
-
-# ---------------------------------------------------------------------------
 # Motor de alto nivel
 # ---------------------------------------------------------------------------
 
@@ -317,9 +266,6 @@ async def create_engine(config: "AgentConfig") -> LLMEngine:
     choice = config.llm_backend
     errors: list[str] = []
 
-    if choice == "mock":
-        return LLMEngine(MockBackend(), defaults)
-
     if choice in ("auto", "llama_cpp"):
         if Path(config.model_path).is_file():
             try:
@@ -347,5 +293,5 @@ async def create_engine(config: "AgentConfig") -> LLMEngine:
     raise LLMUnavailableError(
         "No hay ningún backend LLM disponible:\n  - " + "\n  - ".join(errors)
         + "\nDescarga un modelo con 'make download-model', arranca Ollama ('ollama serve' + "
-          "'ollama pull llama3.1:8b') o usa AGENTOS_LLM_BACKEND=mock para probar."
+          "'ollama pull llama3.1:8b') o usa AGENTOS_LLM_BACKEND=openai con Ollama Cloud (make dev-cloud)."
     )

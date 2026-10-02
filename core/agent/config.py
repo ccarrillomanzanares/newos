@@ -66,7 +66,7 @@ class AgentConfig:
     log_file: Path | None = None
 
     # --- LLM ----------------------------------------------------------------
-    # auto | llama_cpp | openai | mock
+    # auto | llama_cpp | openai
     llm_backend: str = "auto"
     model_path: Path = field(default_factory=lambda: PROJECT_ROOT / "models" / DEFAULT_MODEL_FILE)
     chat_format: str | None = None  # None = usar la plantilla incluida en el GGUF

@@ -292,7 +292,7 @@ async def serve(config: AgentConfig, pidfile: Path | None = None) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="AgentD — demonio agente de AgentOS")
     parser.add_argument("--socket", help="Ruta del socket UNIX")
-    parser.add_argument("--backend", choices=["auto", "llama_cpp", "openai", "mock"], help="Backend LLM")
+    parser.add_argument("--backend", choices=["auto", "llama_cpp", "openai"], help="Backend LLM")
     parser.add_argument("--model", help="Ruta al modelo GGUF")
     parser.add_argument("--log-level", help="DEBUG, INFO, WARNING...")
     parser.add_argument("--pidfile", help="Escribir el PID en este fichero")

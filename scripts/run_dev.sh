@@ -10,7 +10,7 @@ PIDFILE="$RUN_DIR/agentd.pid"
 MODEL="${AGENTOS_MODEL_PATH:-models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf}"
 mkdir -p "$RUN_DIR"
 if [[ ! -f "$MODEL" ]]; then
-  echo "[dev] AVISO: no existe $MODEL -> se usará Ollama (OpenAI-compat) o fallará; usa AGENTOS_LLM_BACKEND=mock para probar"
+  echo "[dev] AVISO: no existe $MODEL -> se usará Ollama (OpenAI-compat) o fallará; usa make dev-cloud"
 fi
 cleanup() {
   if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
