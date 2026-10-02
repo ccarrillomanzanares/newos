@@ -168,6 +168,6 @@ class ToolRegistry:
         logger.info(
             "Tool ejecutada",
             extra={"tool": name, "success": result.success, "duration_ms": result.duration_ms,
-                   "args": json.dumps(args, ensure_ascii=False)[:300]},
+                   "tool_args": json.dumps(args, ensure_ascii=False)[:300]},
         )
         return result

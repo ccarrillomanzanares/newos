@@ -13,9 +13,9 @@ if [[ ! -f "$MODEL" ]]; then
   echo "[dev] AVISO: no existe $MODEL -> se usará Ollama (OpenAI-compat) o fallará; usa AGENTOS_LLM_BACKEND=mock para probar"
 fi
 cleanup() {
-  if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-    kill -TERM "$(cat "$PIDFILE")" 2>/dev/null || true; sleep 1
-    kill -KILL "$(cat "$PIDFILE")" 2>/dev/null || true
+  if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+    kill -TERM "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null || true; sleep 1
+    kill -KILL "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null || true
   fi
   rm -f "$PIDFILE"
 }

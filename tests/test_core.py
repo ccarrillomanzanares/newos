@@ -17,3 +17,17 @@ def test_agent_mock_loop():
     assert "system_monitor" in reg.names()
     res = asyncio.run(reg.execute("system_monitor", {"sections": ["memory"]}))
     assert res.success
+
+
+def test_registry_logging_extra_no_conflict(tmp_path, monkeypatch):
+    """Regresión: el log de ejecución de tools no debe chocar con atributos reservados de LogRecord."""
+    import asyncio
+    import logging
+    from core.agent.config import AgentConfig
+    from core.agent.tools import build_default_registry
+
+    monkeypatch.setenv("AGENTOS_DATA_DIR", str(tmp_path))
+    logging.getLogger().setLevel(logging.INFO)
+    registry = build_default_registry(AgentConfig.from_env())
+    result = asyncio.run(registry.execute("bash_exec", {"command": "echo ok"}))
+    assert result.success, result
