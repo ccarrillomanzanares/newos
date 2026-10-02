@@ -7,6 +7,7 @@ sistema (bash, ficheros, procesos, paquetes, apps, monitor) con niveles de riesg
 ## Inicio rápido (modo dev en Ubuntu)
 ```bash
 make install-deps      # Python 3.11+, llama-cpp-python (CUDA si hay GPU), etc.
+pip install -r requirements.txt   # solo núcleo (Ollama Cloud); modelo local: pip install -r requirements-local.txt
 make dev-cloud         # contra Ollama Cloud (export OLLAMA_API_KEY=...)
 make download-model    # models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 make run               # (= make dev-agent) AgentD + chat TUI con LLaMA real
