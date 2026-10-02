@@ -8,6 +8,7 @@ sistema (bash, ficheros, procesos, paquetes, apps, monitor) con niveles de riesg
 ```bash
 make install-deps      # Python 3.11+, llama-cpp-python (CUDA si hay GPU), etc.
 make dev               # prueba inmediata con LLM simulado (sin modelo)
+make dev-cloud         # contra Ollama Cloud (export OLLAMA_API_KEY=...)
 make download-model    # models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 make run               # (= make dev-agent) AgentD + chat TUI con LLaMA real
 AGENTOS_LLM_BACKEND=mock python3 -m ui.tui.chat --direct   # prueba sin modelo
