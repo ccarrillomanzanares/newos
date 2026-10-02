@@ -1,0 +1,104 @@
+# =============================================================================
+# AgentOS — fragmento de configuración del kernel Linux 6.6 (x86-64)
+# Se aplica SOBRE x86_64_defconfig (BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES).
+# Objetivo: kernel < 8 MB con solo lo necesario para AgentOS.
+# =============================================================================
+
+# --- General ----------------------------------------------------------------
+CONFIG_LOCALVERSION="-agentos"
+CONFIG_DEFAULT_HOSTNAME="agentos"
+CONFIG_KERNEL_ZSTD=y                 # kernel comprimido con zstd (arranque rápido)
+CONFIG_PREEMPT_VOLUNTARY=y           # buena latencia para audio/STT sin coste de PREEMPT_RT
+CONFIG_HZ_1000=y
+CONFIG_NO_HZ_IDLE=y
+CONFIG_CGROUPS=y                     # aislamiento de recursos de llama-server/AgentD
+CONFIG_MEMCG=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_NAMESPACES=y                  # sandbox de bash_exec (fase 2)
+CONFIG_USER_NS=y
+CONFIG_IKCONFIG=y                    # /proc/config.gz para que el agente lo inspeccione
+CONFIG_IKCONFIG_PROC=y
+
+# --- CPU / memoria (inferencia LLM) ------------------------------------------
+CONFIG_NUMA=y
+CONFIG_TRANSPARENT_HUGEPAGE=y        # mejora el rendimiento de mmap del GGUF
+CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
+CONFIG_CPU_FREQ=y
+CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+CONFIG_X86_INTEL_PSTATE=y
+CONFIG_X86_AMD_PSTATE=y
+CONFIG_ZSWAP=y                       # swap comprimida para modelos grandes con poca RAM
+
+# --- Almacenamiento ---------------------------------------------------------
+CONFIG_BLK_DEV_NVME=y
+CONFIG_SATA_AHCI=y
+CONFIG_VIRTIO_BLK=y                  # QEMU
+CONFIG_EXT4_FS=y
+CONFIG_VFAT_FS=y                     # partición EFI
+CONFIG_SQUASHFS=y                    # rootfs A/B de solo lectura (fase 5)
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_OVERLAY_FS=y
+CONFIG_DM_CRYPT=y                    # LUKS2 (fase 5)
+CONFIG_CRYPTO_XTS=y
+CONFIG_CRYPTO_AES_NI_INTEL=y
+
+# --- Red --------------------------------------------------------------------
+CONFIG_E1000E=y
+CONFIG_IGB=y
+CONFIG_R8169=y
+CONFIG_VIRTIO_NET=y                  # QEMU
+CONFIG_IWLWIFI=m                     # Intel WiFi (firmware en /lib/firmware)
+CONFIG_IWLMVM=m
+CONFIG_CFG80211=m
+CONFIG_MAC80211=m
+CONFIG_NETFILTER=y
+CONFIG_NF_TABLES=y                   # firewall gestionado por el agente
+CONFIG_NFT_CT=y
+CONFIG_UNIX=y                        # sockets UNIX (IPC AgentD)
+
+# --- Gráficos (DRM/KMS para Sway en fase 4) ----------------------------------
+CONFIG_DRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_DRM_I915=m
+CONFIG_DRM_AMDGPU=m
+CONFIG_DRM_VIRTIO_GPU=y              # QEMU -device virtio-vga
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+
+# --- Audio (ALSA para STT/TTS) -----------------------------------------------
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_HDA_INTEL=m
+CONFIG_SND_HDA_CODEC_REALTEK=m
+CONFIG_SND_HDA_CODEC_HDMI=m
+CONFIG_SND_USB_AUDIO=m               # micrófonos USB
+CONFIG_SND_INTEL8X0=m                # QEMU -device AC97
+
+# --- Entrada / USB -----------------------------------------------------------
+CONFIG_USB_XHCI_HCD=y
+CONFIG_USB_EHCI_HCD=y
+CONFIG_USB_HID=y
+CONFIG_HID_GENERIC=y
+CONFIG_INPUT_EVDEV=y
+
+# --- Virtualización (desarrollo en QEMU/KVM) ----------------------------------
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_CONSOLE=y
+CONFIG_HW_RANDOM_VIRTIO=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+# --- Seguridad --------------------------------------------------------------
+CONFIG_SECURITY=y
+CONFIG_SECURITY_APPARMOR=y           # perfiles para AgentD y llama-server
+CONFIG_DEFAULT_SECURITY_APPARMOR=y
+CONFIG_SECCOMP=y
+CONFIG_SECCOMP_FILTER=y
+
+# --- Desactivado (reduce tamaño) -----------------------------------------------
+# CONFIG_DEBUG_INFO is not set
+# CONFIG_BT is not set
+# CONFIG_ISDN is not set
+# CONFIG_INFINIBAND is not set
+# CONFIG_STAGING is not set
+# CONFIG_FTRACE is not set

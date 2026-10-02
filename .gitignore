@@ -1,0 +1,9 @@
+models/
+*.gguf
+*.onnx
+__pycache__/
+*.db
+.venv/
+training/data/raw/
+training/output/
+build/buildroot/

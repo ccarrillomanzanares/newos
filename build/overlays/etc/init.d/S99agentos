@@ -1,0 +1,64 @@
+#!/bin/sh
+# /etc/init.d/S99agentos — arranca AgentD al final del boot (BusyBox init).
+# Uso: /etc/init.d/S99agentos {start|stop|restart|status}
+
+NAME=agentd
+AGENTOS_HOME=/opt/agentos
+PIDFILE=/run/agentos/agentd.pid
+LOGFILE=/var/log/agentd.log
+PYTHON=/usr/bin/python3
+
+export AGENTOS_MODE=os
+export AGENTOS_DATA_DIR=/data/agent
+export AGENTOS_SOCKET=/run/agentos/input.sock
+export AGENTOS_MODEL_PATH=/data/models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+export AGENTOS_LOG_FORMAT=json
+export PYTHONPATH="$AGENTOS_HOME"
+export HOME=/root
+
+[ -f /etc/default/agentos ] && . /etc/default/agentos   # sobrescrituras locales
+
+start() {
+    printf "Iniciando %s: " "$NAME"
+    mkdir -p /run/agentos /data/agent /data/models
+    chmod 0750 /run/agentos
+    if [ ! -f "$AGENTOS_MODEL_PATH" ]; then
+        echo "AVISO: no existe $AGENTOS_MODEL_PATH; AgentD intentará el backend OpenAI-compatible" >> "$LOGFILE"
+    fi
+    start-stop-daemon -S -q -b -m -p "$PIDFILE" -d "$AGENTOS_HOME" \
+        -x /bin/sh -- -c "exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
+    # Esperar a que aparezca el socket (máx. 120 s: la carga del modelo tarda)
+    i=0
+    while [ ! -S "$AGENTOS_SOCKET" ] && [ $i -lt 120 ]; do
+        sleep 1; i=$((i + 1))
+    done
+    if [ -S "$AGENTOS_SOCKET" ]; then echo "OK"; else echo "FALLO (ver $LOGFILE)"; return 1; fi
+}
+
+stop() {
+    printf "Deteniendo %s: " "$NAME"
+    start-stop-daemon -K -q -p "$PIDFILE" -s TERM
+    i=0
+    while [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null && [ $i -lt 15 ]; do
+        sleep 1; i=$((i + 1))
+    done
+    rm -f "$PIDFILE"
+    echo "OK"
+}
+
+status() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "$NAME en ejecución (PID $(cat "$PIDFILE"))"
+    else
+        echo "$NAME detenido"; return 3
+    fi
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart|reload) stop; start ;;
+    status) status ;;
+    *) echo "Uso: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
+exit $?

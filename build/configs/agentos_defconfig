@@ -1,0 +1,83 @@
+# =============================================================================
+# AgentOS — Buildroot defconfig (x86-64, imagen mínima arrancable en QEMU)
+# Uso:  make build   (ver Makefile; equivale a make BR2_EXTERNAL=... agentos_defconfig)
+# Probado como referencia con Buildroot 2024.02.x LTS.
+# =============================================================================
+
+# --- Arquitectura -----------------------------------------------------------
+BR2_x86_64=y
+BR2_x86_x86_64_v3=y                      # AVX2 (requerido para llama.cpp rápido)
+
+# --- Toolchain --------------------------------------------------------------
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y          # glibc: necesaria para wheels de Python/llama.cpp
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_TOOLCHAIN_BUILDROOT_FORTRAN=n
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_6=y
+
+# --- Sistema ----------------------------------------------------------------
+BR2_TARGET_GENERIC_HOSTNAME="agentos"
+BR2_TARGET_GENERIC_ISSUE="AgentOS v0.1 — sistema operativo conversacional"
+BR2_TARGET_GENERIC_ROOT_PASSWD="agentos"  # ¡cambiar! solo para desarrollo
+BR2_INIT_BUSYBOX=y                       # v0.1: init BusyBox + scripts /etc/init.d (systemd en fase 2)
+BR2_SYSTEM_DHCP="eth0"
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"    # consola serie para QEMU -nographic
+BR2_SYSTEM_BIN_SH_BASH=y
+BR2_ENABLE_LOCALE_WHITELIST="C en_US es_ES"
+BR2_GENERATE_LOCALE="es_ES.UTF-8 en_US.UTF-8"
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_AGENTOS_PATH)/build/overlays"
+
+# --- Kernel -----------------------------------------------------------------
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.6.52"
+BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y          # x86_64_defconfig como base…
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_AGENTOS_PATH)/build/configs/kernel_config"  # …+ fragmento AgentOS
+BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
+
+# --- Paquetes base ----------------------------------------------------------
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
+BR2_PACKAGE_BASH=y
+BR2_PACKAGE_COREUTILS=y
+BR2_PACKAGE_PROCPS_NG=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_E2FSPROGS=y
+BR2_PACKAGE_CA_CERTIFICATES=y
+BR2_PACKAGE_OPENSSH=y
+BR2_PACKAGE_CURL=y
+BR2_PACKAGE_LIBCURL_CURL=y
+BR2_PACKAGE_IPROUTE2=y
+BR2_PACKAGE_SUDO=y
+BR2_PACKAGE_HTOP=y
+
+# --- Python (AgentD) --------------------------------------------------------
+BR2_PACKAGE_PYTHON3=y
+BR2_PACKAGE_PYTHON3_PY_PYC=y
+BR2_PACKAGE_PYTHON3_SQLITE=y
+BR2_PACKAGE_PYTHON3_SSL=y
+BR2_PACKAGE_PYTHON3_READLINE=y
+BR2_PACKAGE_PYTHON3_ZLIB=y
+BR2_PACKAGE_PYTHON_PSUTIL=y
+BR2_PACKAGE_PYTHON_COLORAMA=y
+BR2_PACKAGE_PYTHON_AIOFILES=y
+BR2_PACKAGE_PYTHON_HTTPX=y
+BR2_PACKAGE_PYTHON_PIP=y                 # llama-cpp-python se instala con pip en el primer arranque (fase 0)
+
+# --- Inferencia / audio -----------------------------------------------------
+BR2_PACKAGE_OPENBLAS=y                   # BLAS para llama.cpp en CPU
+BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_APLAY=y
+
+# --- Gráficos (fase 4: Sway; desactivado en v0.1 para mantener la imagen mínima)
+# BR2_PACKAGE_SWAY=y
+# BR2_PACKAGE_MESA3D=y
+
+# --- Imagen -----------------------------------------------------------------
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="4G"         # incluye espacio para el modelo GGUF en /data
+# BR2_TARGET_ROOTFS_TAR is not set
+BR2_TARGET_GRUB2=y
+BR2_TARGET_GRUB2_X86_64_EFI=y
+BR2_PACKAGE_HOST_QEMU=y
+BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE=y

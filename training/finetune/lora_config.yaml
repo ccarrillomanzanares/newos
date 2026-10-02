@@ -1,0 +1,53 @@
+# Configuración LoRA para AgentOS (compatible con LLaMA-Factory y con train.py)
+# LLaMA-Factory:  llamafactory-cli train training/finetune/lora_config.yaml
+# Script propio:  python training/finetune/train.py --config training/finetune/lora_config.yaml
+
+### Modelo
+model_name_or_path: meta-llama/Meta-Llama-3.1-8B-Instruct   # requiere aceptar la licencia en HF
+template: llama3
+quantization_bit: 4            # QLoRA 4-bit (≈ 10-12 GB VRAM). Quitar para LoRA bf16 (≈ 24 GB)
+
+### Método
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+
+### Dataset
+# Para LLaMA-Factory registra "agentos_sft" en data/dataset_info.json con
+#   {"file_name": "agentos_sft.jsonl", "formatting": "sharegpt",
+#    "columns": {"messages": "messages"},
+#    "tags": {"role_tag": "role", "content_tag": "content", "user_tag": "user",
+#             "assistant_tag": "assistant", "system_tag": "system"}}
+dataset: agentos_sft
+dataset_dir: training/data
+train_file: training/data/agentos_sft.jsonl        # usado por train.py
+eval_file: training/data/agentos_sft_eval.jsonl    # usado por train.py
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 8
+
+### Salida
+output_dir: training/output/agentos-lora
+logging_steps: 10
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+report_to: none
+
+### Entrenamiento
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 2.0e-4
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+gradient_checkpointing: true
+
+### Evaluación
+val_size: 0.0          # LLaMA-Factory: ya usamos un fichero de evaluación separado
+eval_steps: 500
