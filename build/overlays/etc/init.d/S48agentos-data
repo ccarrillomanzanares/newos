@@ -1,0 +1,56 @@
+#!/bin/sh
+# /etc/init.d/S48agentos-data — espacio escribible para el agente.
+#
+# PROBLEMA: AgentD guarda su memoria SQLite en /data/agent y libsoup (WebKit)
+# su caché en /root/.cache. En el ISO live la raíz es un ramfs del tamaño de la
+# imagen (~860 MB) que se llena al 100% en cuanto el SO arranca: cualquier
+# escritura falla con "database or disk is full" y el error acaba pintado en la
+# interfaz como si fuera una respuesta del agente.
+#
+# SOLUCIÓN: comprobar si esas rutas admiten escritura; si no, montar tmpfs
+# encima. En un sistema instalado en disco (ext2, con espacio) la comprobación
+# pasa y los datos PERSISTEN entre reinicios; en el live se usa RAM y se pierden
+# al apagar, que es lo correcto para un sistema que corre desde el ISO.
+#
+# Se ejecuta antes que S99agentos (el agente arranca ahí).
+
+TARGETS="/data /root/.cache"
+
+ensure_writable() {
+    dir="$1"
+    mkdir -p "$dir" 2>/dev/null
+
+    # ¿Se puede escribir de verdad? Hay que escribir BYTES, no crear el fichero:
+    # crear uno de 0 bytes no consume espacio y da falso positivo en un ramfs
+    # lleno (comprobado en la VM: "df" decia 0 disponible y ": > f" funcionaba).
+    probe="$dir/.agentos-write-probe"
+    if dd if=/dev/zero of="$probe" bs=1024 count=4 2>/dev/null; then
+        rm -f "$probe" 2>/dev/null
+        echo "[data] $dir escribible, sin cambios"
+        return 0
+    fi
+    rm -f "$probe" 2>/dev/null
+
+    mountpoint -q "$dir" && { echo "[data] $dir no escribible pero ya montado; no se toca"; return 0; }
+
+    if mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs "$dir"; then
+        echo "[data] $dir sin espacio -> tmpfs montado (los datos NO persisten)"
+    else
+        echo "[data] AVISO: no se pudo montar tmpfs en $dir"
+    fi
+}
+
+start() {
+    for d in $TARGETS; do
+        ensure_writable "$d"
+    done
+    # El agente espera encontrar su directorio de trabajo
+    mkdir -p /data/agent /data/models 2>/dev/null
+}
+
+case "$1" in
+    start) start ;;
+    stop|restart|reload) ;;
+    *) echo "Uso: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0
