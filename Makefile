@@ -2,9 +2,10 @@
 PY ?= python3
 BR_VERSION ?= 2024.02.6
 BR_DIR := build/buildroot
-OUT := $(BR_DIR)/output/images
+BR_OUT := $(CURDIR)/build/output
+OUT := $(BR_OUT)/images
 
-.PHONY: install-deps download-model run dev-cloud dev-agent agentd chat test build run-qemu clean
+.PHONY: install-deps download-model run dev-cloud dev-agent agentd chat test build iso run-qemu run-qemu-iso clean
 
 # Con el modelo GGUF real (ejecutar antes: make download-model)
 run: dev-agent
@@ -28,18 +29,26 @@ chat:
 test:
 	$(PY) -m pytest -q tests
 
-# Imagen completa con Buildroot (BR2_EXTERNAL = raíz del proyecto)
+# Imagen completa con Buildroot (BR2_EXTERNAL = raíz del proyecto).
+# Resultado: build/output/images/agentos.iso (DVD/VM) y agentos.img (USB, dd).
 build:
 	[ -d $(BR_DIR) ] || git clone --depth 1 -b $(BR_VERSION) https://gitlab.com/buildroot.org/buildroot.git $(BR_DIR)
 	mkdir -p build/overlays/opt/agentos
-	rsync -a --delete --exclude build --exclude models --exclude .git --exclude training ./ build/overlays/opt/agentos/
-	$(MAKE) -C $(BR_DIR) BR2_EXTERNAL=$(CURDIR) BR2_DEFCONFIG=$(CURDIR)/build/configs/agentos_defconfig defconfig
-	$(MAKE) -C $(BR_DIR)
+	rsync -a --delete --exclude build --exclude board --exclude models --exclude .git --exclude training ./ build/overlays/opt/agentos/
+	# equivale a 'make agentos_defconfig' (el defconfig vive en build/configs/)
+	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) BR2_EXTERNAL=$(CURDIR) BR2_DEFCONFIG=$(CURDIR)/build/configs/agentos_defconfig defconfig
+	$(MAKE) -C $(BR_DIR) O=$(BR_OUT)
+	@ls -lh $(OUT)/agentos.iso $(OUT)/agentos.img
+iso: build
 
+# Imagen USB en QEMU (BIOS). Para UEFI añade: -bios /usr/share/ovmf/OVMF.fd
 run-qemu:
-	qemu-system-x86_64 -enable-kvm -cpu host -m 12G -smp 4 \
-	  -kernel $(OUT)/bzImage -drive file=$(OUT)/rootfs.ext4,if=virtio,format=raw \
-	  -append "root=/dev/vda console=ttyS0" -nographic -nic user,hostfwd=tcp::2222-:22
+	qemu-system-x86_64 -enable-kvm -cpu host -m 4G -smp 4 \
+	  -drive file=$(OUT)/agentos.img,format=raw,if=virtio \
+	  -device virtio-vga -nic user,hostfwd=tcp::2222-:22
+run-qemu-iso:
+	qemu-system-x86_64 -enable-kvm -cpu host -m 4G -smp 4 \
+	  -cdrom $(OUT)/agentos.iso -device virtio-vga -nic user,hostfwd=tcp::2222-:22
 
 clean:
 	rm -rf build/overlays/opt/agentos

@@ -16,7 +16,10 @@ make test
 Sin GGUF, AgentD intenta un servidor OpenAI-compatible (Ollama en 127.0.0.1:11434).
 
 ## Imagen del SO
-`make build` (Buildroot 2024.02, BR2_EXTERNAL = este repo) y `make run-qemu`.
+`make build` (o `make iso`; Buildroot 2024.02, BR2_EXTERNAL = este repo) genera en `build/output/images/`:
+`agentos.img` (USB: `sudo dd if=agentos.img of=/dev/sdX bs=4M conv=fsync`, BIOS + UEFI) y `agentos.iso` (DVD/VM).
+Desde el sistema live, `agentos-install` instala en el disco interno (GPT, BIOS + UEFI; borra el disco).
+Prueba en QEMU: `make run-qemu` (imagen USB) o `make run-qemu-iso`. Ficheros de arranque en `board/agentos/`.
 
 ## Variables de entorno (prefijo AGENTOS_)
 MODE (dev|os), DATA_DIR, SOCKET, LLM_BACKEND (auto|llama_cpp|openai), MODEL_PATH, N_CTX,

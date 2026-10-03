@@ -7,3 +7,5 @@ __pycache__/
 training/data/raw/
 training/output/
 build/buildroot/
+build/output/
+build/overlays/opt/

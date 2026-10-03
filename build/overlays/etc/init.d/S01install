@@ -1,0 +1,30 @@
+#!/bin/sh
+# /etc/init.d/S01install — NO lanza el instalador. Solo, en el sistema live,
+# avisa de que está disponible el comando 'agentos-install'.
+
+start() {
+    if [ -x /usr/bin/agentos-install ] && is_live; then
+        cat > /etc/motd <<'MSG'
+
+  AgentOS (sistema live)
+  Para instalar AgentOS en el disco interno ejecuta:  agentos-install
+  (se borrará el disco elegido; se pide confirmación)
+
+MSG
+    fi
+}
+
+# Live = arrancado desde el ISO (agentos.live=1) o desde la imagen USB
+# (raíz en la partición de firma a6e705a1, ver build/genimage.cfg)
+is_live() {
+    grep -q "agentos.live=1" /proc/cmdline && return 0
+    grep -q "root=PARTUUID=a6e705a1-" /proc/cmdline && return 0
+    return 1
+}
+
+case "$1" in
+    start) start ;;
+    stop|restart|reload) ;;
+    *) echo "Uso: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0
