@@ -27,9 +27,6 @@ load_config() {
 }
 
 start() {
-    if [ ! -f /etc/agentos/.configured ]; then
-        /opt/agentos/board/agentos/first-boot.sh
-    fi
     load_config
     printf "Iniciando %s: " "$NAME"
     mkdir -p /run/agentos /data/agent /data/models
