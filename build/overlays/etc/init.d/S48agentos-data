@@ -7,34 +7,59 @@
 # escritura falla con "database or disk is full" y el error acaba pintado en la
 # interfaz como si fuera una respuesta del agente.
 #
-# SOLUCIÓN: comprobar si esas rutas admiten escritura; si no, montar tmpfs
-# encima. En un sistema instalado en disco (ext2, con espacio) la comprobación
-# pasa y los datos PERSISTEN entre reinicios; en el live se usa RAM y se pierden
-# al apagar, que es lo correcto para un sistema que corre desde el ISO.
+# CRITERIO: no preguntar "¿queda espacio?" sino "¿este sistema puede persistir
+# datos?". Comprobar el espacio con una sonda puntual NO sirve: S48 corre muy
+# temprano, cuando el ramfs todavía está vacío, la sonda pasa y no se monta
+# nada; el agente lo llena después. Hay que mirar el TIPO de sistema de ficheros
+# de la raíz:
+#
+#   rootfs/ramfs/tmpfs -> vive en RAM, efímero  -> montar tmpfs para los datos
+#   ext2/ext4/...      -> disco real, persiste  -> no tocar (los datos se
+#                          conservan entre reinicios); solo si la sonda detecta
+#                          que está lleno, montar tmpfs como rescate.
 #
 # Se ejecuta antes que S99agentos (el agente arranca ahí).
 
 TARGETS="/data /root/.cache"
 
-ensure_writable() {
+# ¿La raíz es un sistema de ficheros efímero (RAM)?
+root_is_ephemeral() {
+    tipo=$(grep " / " /proc/mounts 2>/dev/null | cut -d' ' -f3)
+    case "$tipo" in
+        rootfs|ramfs|tmpfs) return 0 ;;   # RAM: no persiste
+        *) return 1 ;;
+    esac
+}
+
+# ¿Se puede escribir de verdad? Hay que escribir BYTES: crear un fichero de
+# 0 bytes no consume espacio y da falso positivo en un ramfs lleno (comprobado
+# en la VM: "df" decia 0 disponible y ": > fichero" funcionaba igualmente).
+writable() {
+    dd if=/dev/zero of="$1/.agentos-write-probe" bs=1024 count=4 2>/dev/null
+}
+
+setup_dir() {
     dir="$1"
     mkdir -p "$dir" 2>/dev/null
 
-    # ¿Se puede escribir de verdad? Hay que escribir BYTES, no crear el fichero:
-    # crear uno de 0 bytes no consume espacio y da falso positivo en un ramfs
-    # lleno (comprobado en la VM: "df" decia 0 disponible y ": > f" funcionaba).
-    probe="$dir/.agentos-write-probe"
-    if dd if=/dev/zero of="$probe" bs=1024 count=4 2>/dev/null; then
-        rm -f "$probe" 2>/dev/null
-        echo "[data] $dir escribible, sin cambios"
+    if ! root_is_ephemeral && writable "$dir"; then
+        rm -f "$dir/.agentos-write-probe" 2>/dev/null
+        echo "[data] $dir sobre disco con espacio: los datos persisten"
         return 0
     fi
-    rm -f "$probe" 2>/dev/null
+    rm -f "$dir/.agentos-write-probe" 2>/dev/null
 
-    mountpoint -q "$dir" && { echo "[data] $dir no escribible pero ya montado; no se toca"; return 0; }
+    if mountpoint -q "$dir"; then
+        echo "[data] $dir ya tiene un montaje propio; no se toca"
+        return 0
+    fi
 
     if mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs "$dir"; then
-        echo "[data] $dir sin espacio -> tmpfs montado (los datos NO persisten)"
+        if root_is_ephemeral; then
+            echo "[data] $dir -> tmpfs (sistema live en RAM; los datos no persisten)"
+        else
+            echo "[data] $dir sin espacio -> tmpfs de rescate"
+        fi
     else
         echo "[data] AVISO: no se pudo montar tmpfs en $dir"
     fi
@@ -42,7 +67,7 @@ ensure_writable() {
 
 start() {
     for d in $TARGETS; do
-        ensure_writable "$d"
+        setup_dir "$d"
     done
     # El agente espera encontrar su directorio de trabajo
     mkdir -p /data/agent /data/models 2>/dev/null
