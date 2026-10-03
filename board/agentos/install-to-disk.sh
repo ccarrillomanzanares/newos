@@ -13,7 +13,6 @@ set -euo pipefail
 
 MNT=/mnt/agentos-install
 GRUB_TEMPLATE=/usr/share/agentos/grub.cfg
-LIVE_DISK_SIGNATURE="a6e705a1"   # firma MBR de la imagen USB (build/genimage.cfg)
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -40,12 +39,9 @@ if [ -b "$root_src" ]; then
     parent="$(lsblk -n -d -o PKNAME "$root_src" 2>/dev/null || true)"
     live_disks+=("/dev/${parent:-$(basename "$root_src")}")
 fi
-while read -r name _pttype ptuuid fstype; do
-    # USB live (firma de disco conocida) o medio ISO9660
-    if [ "${ptuuid:-}" = "$LIVE_DISK_SIGNATURE" ] || [ "${fstype:-}" = "iso9660" ]; then
-        live_disks+=("$name")
-    fi
-done < <(lsblk -d -n -p -o NAME,PTTYPE,PTUUID,FSTYPE 2>/dev/null)
+while read -r name fstype; do
+    [ "${fstype:-}" = "iso9660" ] && live_disks+=("$name")
+done < <(lsblk -d -n -p -o NAME,FSTYPE 2>/dev/null)
 
 is_live() {
     local d
@@ -69,7 +65,7 @@ while read -r name size type tran model; do
     printf "  %2d) %-14s %8s  %-5s %s\n" "${#candidates[@]}" "$name" "$size" "${tran:-}" "${model:-}"
 done < <(lsblk -d -n -p -o NAME,SIZE,TYPE,TRAN,MODEL)
 
-[ "${#candidates[@]}" -gt 0 ] || die "no hay ningún disco de destino disponible"
+[ "${#candidates[@]}" -gt 0 ] || die "no hay ningún disco de destino disponible (añade un disco virtual o conecta un disco distinto del medio de instalación)"
 echo ""
 read -r -p "Número del disco donde instalar AgentOS (o 'q' para salir): " choice
 [ "$choice" = "q" ] && { echo "Cancelado."; exit 0; }
