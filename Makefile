@@ -1,9 +1,10 @@
 # AgentOS — Makefile principal
-PY ?= python3
+PY      ?= python3
+J       ?= $(shell nproc)
 BR_VERSION ?= 2024.11.1
-BR_DIR := build/buildroot
-BR_OUT := $(CURDIR)/build/output
-OUT := $(BR_OUT)/images
+BR_DIR  := build/buildroot
+BR_OUT  := $(CURDIR)/build/output
+OUT     := $(BR_OUT)/images
 
 .PHONY: install-deps download-model run gui dev-cloud dev-agent agentd chat test build iso run-qemu run-qemu-iso clean
 
@@ -41,12 +42,23 @@ test:
 
 # Imagen completa con Buildroot (BR2_EXTERNAL = raíz del proyecto).
 # Resultado: build/output/images/agentos.iso (DVD/VM) y agentos.img (USB, dd).
+# Uso: make build                        → auto-detecta CPUs (nproc)
+#      make build J=16                   → fuerza 16 jobs
+#      HOSTCC=gcc-12 HOSTCXX=g++-12 make build J=16   → gcc-12 + 16 jobs (Ubuntu 24.04)
 build:
+	@echo ">>> Buildroot $(BR_VERSION) con -j$(J) HOSTCC=$(HOSTCC) HOSTCXX=$(HOSTCXX)"
 	[ -d $(BR_DIR) ] || git clone --depth 1 -b $(BR_VERSION) https://gitlab.com/buildroot.org/buildroot.git $(BR_DIR)
 	mkdir -p build/overlays/opt/agentos
-	rsync -a --delete --exclude build --exclude board --exclude models --exclude .git --exclude training ./ build/overlays/opt/agentos/
-	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) BR2_EXTERNAL=$(CURDIR) BR2_DEFCONFIG=$(CURDIR)/build/configs/agentos_defconfig defconfig
-	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) -j$(shell nproc) HOSTCC="$(HOSTCC)" HOSTCXX="$(HOSTCXX)"
+	rsync -a --delete \
+	  --exclude build --exclude board --exclude models \
+	  --exclude .git  --exclude training \
+	  ./ build/overlays/opt/agentos/
+	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) \
+	  BR2_EXTERNAL=$(CURDIR) \
+	  BR2_DEFCONFIG=$(CURDIR)/build/configs/agentos_defconfig \
+	  defconfig
+	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) -j$(J) \
+	  HOSTCC="$(HOSTCC)" HOSTCXX="$(HOSTCXX)"
 	@ls -lh $(OUT)/agentos.iso $(OUT)/agentos.img 2>/dev/null || ls -lh $(OUT)/
 
 iso: build
