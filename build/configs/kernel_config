@@ -19,6 +19,12 @@ CONFIG_USER_NS=y
 CONFIG_IKCONFIG=y                    # /proc/config.gz para que el agente lo inspeccione
 CONFIG_IKCONFIG_PROC=y
 
+# --- Boot silencioso --------------------------------------------------------
+# CONFIG_LOGO is not set             # elimina el logo del pingüino en el arranque
+# CONFIG_LOGO_LINUX_MONO is not set
+# CONFIG_LOGO_LINUX_VGA16 is not set
+# CONFIG_LOGO_LINUX_CLUT224 is not set
+
 # --- CPU / memoria (inferencia LLM) ------------------------------------------
 CONFIG_NUMA=y
 CONFIG_TRANSPARENT_HUGEPAGE=y        # mejora el rendimiento de mmap del GGUF
