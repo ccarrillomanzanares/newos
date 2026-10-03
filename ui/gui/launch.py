@@ -4,7 +4,7 @@
 * X11:     chromium → firefox
 * Sin display: solo el servidor (sandbox / headless)
 
-Uso: python -m ui.gui.launch [--port 8080] [--no-browser]
+Uso: python -m ui.gui.launch [--port 8080] [--socket RUTA] [--no-browser]
 """
 from __future__ import annotations
 
@@ -51,10 +51,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Lanzador de la interfaz gráfica de AgentOS")
     ap.add_argument("--port", type=int, default=int(os.environ.get("AGENTOS_GUI_PORT", "8080")))
     ap.add_argument("--no-browser", action="store_true", help="Solo arrancar el servidor")
+    ap.add_argument("--socket", default=None, help="Ruta del socket de AgentD")
     args = ap.parse_args()
     url = f"http://localhost:{args.port}"
 
-    server = subprocess.Popen([sys.executable, "-m", "ui.gui.server", "--port", str(args.port)])
+    server_cmd = [sys.executable, "-m", "ui.gui.server", "--port", str(args.port)]
+    if args.socket:
+        server_cmd += ["--socket", args.socket]
+    server = subprocess.Popen(server_cmd)
 
     def stop(*_: object) -> None:
         server.terminate()
