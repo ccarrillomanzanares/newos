@@ -52,5 +52,11 @@ while :; do
     rc=$?
     child=0
     echo "[gui] la interfaz terminó (código $rc); se relanza en 2 s"
+    # Dejar rastro de POR QUÉ murió: si cog no puede arrancar, sin esto el
+    # fallo es invisible (la pantalla solo muestra el fondo del compositor).
+    tail -n 20 "$GUI_LOG" 2>/dev/null | sed 's/^/[gui-log] /'
+    command -v cog >/dev/null 2>&1 || echo "[gui] cog NO está en el PATH"
+    [ -n "$WAYLAND_DISPLAY" ] && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] \
+        || echo "[gui] socket Wayland ausente: $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
     sleep 2
 done
