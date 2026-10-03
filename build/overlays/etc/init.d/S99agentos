@@ -1,6 +1,9 @@
 #!/bin/sh
 # /etc/init.d/S99agentos — arranca AgentD al final del boot (BusyBox init).
 # Uso: /etc/init.d/S99agentos {start|stop|restart|status}
+#
+# NOTA: BusyBox start-stop-daemon NO soporta -d (chdir).
+#       El cd se hace dentro del propio comando shell.
 
 NAME=agentd
 AGENTOS_HOME=/opt/agentos
@@ -19,13 +22,11 @@ export PYTHONPATH="$AGENTOS_HOME"
 export HOME=/root
 
 # Sobrescrituras locales (las escribe first-boot.sh / agentos-config).
-# set -a: exporta las variables nuevas para que las herede AgentD.
 load_config() {
     [ -f /etc/default/agentos ] && { set -a; . /etc/default/agentos; set +a; }
 }
 
 start() {
-    # Primer arranque: mostrar asistente de configuración si no está configurado
     if [ ! -f /etc/agentos/.configured ]; then
         /opt/agentos/board/agentos/first-boot.sh
     fi
@@ -33,27 +34,30 @@ start() {
     printf "Iniciando %s: " "$NAME"
     mkdir -p /run/agentos /data/agent /data/models
     chmod 0750 /run/agentos
-    if [ ! -f "$AGENTOS_MODEL_PATH" ]; then
-        echo "AVISO: no existe $AGENTOS_MODEL_PATH; AgentD intentará el backend OpenAI-compatible" >> "$LOGFILE"
-    fi
-    start-stop-daemon -S -q -b -m -p "$PIDFILE" -d "$AGENTOS_HOME" \
-        -x /bin/sh -- -c "exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
-    # Esperar a que aparezca el socket (máx. 120 s: la carga del modelo tarda)
+    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
+    start-stop-daemon -S -q -b -m -p "$PIDFILE" \
+        -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
+    # Esperar el socket (máx. 120 s)
     i=0
     while [ ! -S "$AGENTOS_SOCKET" ] && [ $i -lt 120 ]; do
         sleep 1; i=$((i + 1))
     done
-    if [ -S "$AGENTOS_SOCKET" ]; then echo "OK"; else echo "FALLO (ver $LOGFILE)"; return 1; fi
+    if [ -S "$AGENTOS_SOCKET" ]; then
+        echo "OK"
+    else
+        echo "FALLO (ver $LOGFILE)"
+        return 1
+    fi
     start_gui
 }
 
-# Interfaz «Her» (servidor WebSocket + navegador kiosk). Necesita Weston: XDG_RUNTIME_DIR/WAYLAND_DISPLAY
 start_gui() {
-    printf "Iniciando interfaz: "
+    printf "Iniciando interfaz gráfica: "
     export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
     export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-    start-stop-daemon -S -q -b -m -p "$GUI_PIDFILE" -d "$AGENTOS_HOME" \
-        -x /bin/sh -- -c "exec $PYTHON -m ui.gui.launch >> $GUI_LOGFILE 2>&1"
+    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
+    start-stop-daemon -S -q -b -m -p "$GUI_PIDFILE" \
+        -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m ui.gui.launch >> $GUI_LOGFILE 2>&1"
     echo "OK"
 }
 
@@ -83,10 +87,10 @@ status() {
 }
 
 case "$1" in
-    start) start ;;
-    stop) stop ;;
+    start)          start   ;;
+    stop)           stop    ;;
     restart|reload) stop; start ;;
-    status) status ;;
-    *) echo "Uso: $0 {start|stop|restart|status}"; exit 1 ;;
+    status)         status  ;;
+    *)  echo "Uso: $0 {start|stop|restart|status}"; exit 1 ;;
 esac
 exit $?
