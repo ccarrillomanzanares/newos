@@ -18,10 +18,9 @@ install -D -m 0755 "$BOARD_DIR/agentos-config.sh" "$TARGET_DIR/opt/agentos/board
 # servicio (Weston incluido) NO arranca — sin ningún error visible en pantalla.
 chmod 0755 "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* 2>/dev/null || true
 
-# Los servicios escriben en /var/log/, pero en esta imagen /var/log es un
-# tmpfs vacío (no hay syslogd al que apuntar): la carpeta debe existir antes
-# de que arranque nada, o las redirecciones ">> /var/log/xxx.log" fallan.
-mkdir -p "$TARGET_DIR/var/log"
+# /var/log es un symlink a ../tmp en esta imagen, así que no se crea: el
+# destino existe siempre. Lo único que hace falta es que los scripts de arranque
+# puedan escribir ahí (ver S99agentos / agentos-gui).
 
 # sudo: permisos estrictos (git no conserva 0440) e inclusión de /etc/sudoers.d
 if [ -f "$TARGET_DIR/etc/sudoers.d/agent" ]; then
@@ -34,7 +33,11 @@ fi
 # console=ttyS0 el arranque entero se puede leer en texto desde el anfitrión
 # (VirtualBox: --uart1 0x3F8 4 --uartmode1 file arranque.log). Sin esto, un
 # fallo de arranque solo se puede diagnosticar a ciegas con capturas de pantalla.
-ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
+# Va dentro del mismo bloque que el resto de entradas del inittab.
+if [ -f "$TARGET_DIR/etc/inittab" ]; then
+    grep -q '^ttyS0::respawn:' "$TARGET_DIR/etc/inittab" || \
+        echo 'ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100' >> "$TARGET_DIR/etc/inittab"
+fi
 
 # Autologin en tty2 (consola de respaldo). BusyBox getty NO soporta -a,
 # así que se usa /bin/login -f (entra sin contraseña).
