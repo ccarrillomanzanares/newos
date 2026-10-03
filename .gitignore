@@ -9,3 +9,7 @@ training/output/
 build/buildroot/
 build/output/
 build/overlays/opt/
+
+# Credenciales pre-bakeadas en el overlay (nunca subir al repo)
+build/overlays/etc/default/agentos
+build/overlays/etc/agentos/.configured
