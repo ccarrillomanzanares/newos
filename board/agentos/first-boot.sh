@@ -10,9 +10,11 @@ MODELS_DIR=/data/models
 
 [ -f "$MARKER" ] && exit 0
 
-# Si no hay terminal (p. ej. arranque sin consola), usar /dev/console
-if [ ! -t 0 ] && [ -c /dev/console ]; then
-    exec </dev/console >/dev/console 2>&1
+# Si no hay terminal (p. ej. arranque sin consola), usar tty1 o /dev/console
+if [ ! -t 0 ]; then
+    for t in /dev/tty1 /dev/console; do
+        [ -c "$t" ] && { exec <"$t" >"$t" 2>&1; break; }
+    done
 fi
 
 # Entrada oculta con stty -echo (equivale a read -s; funciona en BusyBox sh)
@@ -75,25 +77,6 @@ else
     MODEL=${MODEL:-$DEF_MODEL}
 fi
 
-# Contraseña del usuario agent
-echo
-while :; do
-    printf 'Nueva contraseña para el usuario agent (vacío = mantener "agent"): '
-    stty -echo 2>/dev/null; read -r P1; stty echo 2>/dev/null; echo
-    [ -z "$P1" ] && { echo "Se mantiene la contraseña actual."; break; }
-    printf 'Repite la contraseña: '
-    stty -echo 2>/dev/null; read -r P2; stty echo 2>/dev/null; echo
-    if [ "$P1" = "$P2" ]; then
-        if echo "agent:$P1" | chpasswd 2>/dev/null; then
-            echo "Contraseña actualizada."
-        else
-            echo "No se pudo cambiar con chpasswd; usa 'passwd agent' más tarde."
-        fi
-        break
-    fi
-    echo "Las contraseñas no coinciden; inténtalo de nuevo."
-done
-unset P1 P2
 
 # Escribir configuración
 mkdir -p /etc/default "$CONF_DIR"
