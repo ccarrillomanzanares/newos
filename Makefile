@@ -1,6 +1,6 @@
 # AgentOS — Makefile principal
 PY ?= python3
-BR_VERSION ?= 2024.02.6
+BR_VERSION ?= 2024.11.1
 BR_DIR := build/buildroot
 BR_OUT := $(CURDIR)/build/output
 OUT := $(BR_OUT)/images
