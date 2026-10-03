@@ -11,6 +11,7 @@ pip install -r requirements.txt   # solo núcleo (Ollama Cloud); modelo local: p
 make dev-cloud         # contra Ollama Cloud (export OLLAMA_API_KEY=...)
 make download-model    # models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 make run               # (= make dev-agent) AgentD + chat TUI con LLaMA real
+python3 -m ui.gui.launch  # interfaz «Her» (http://localhost:8080, kiosk si hay display)
 make test
 ```
 Sin GGUF, AgentD intenta un servidor OpenAI-compatible (Ollama en 127.0.0.1:11434).

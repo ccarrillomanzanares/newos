@@ -7,6 +7,8 @@ AGENTOS_HOME=/opt/agentos
 PIDFILE=/run/agentos/agentd.pid
 LOGFILE=/var/log/agentd.log
 PYTHON=/usr/bin/python3
+GUI_PIDFILE=/run/agentos/gui.pid
+GUI_LOGFILE=/var/log/agentos-gui.log
 
 export AGENTOS_MODE=os
 export AGENTOS_DATA_DIR=/data/agent
@@ -33,9 +35,26 @@ start() {
         sleep 1; i=$((i + 1))
     done
     if [ -S "$AGENTOS_SOCKET" ]; then echo "OK"; else echo "FALLO (ver $LOGFILE)"; return 1; fi
+    start_gui
+}
+
+# Interfaz «Her» (servidor WebSocket + navegador kiosk). Necesita Weston: XDG_RUNTIME_DIR/WAYLAND_DISPLAY
+start_gui() {
+    printf "Iniciando interfaz: "
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
+    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+    start-stop-daemon -S -q -b -m -p "$GUI_PIDFILE" -d "$AGENTOS_HOME" \
+        -x /bin/sh -- -c "exec $PYTHON -m ui.gui.launch >> $GUI_LOGFILE 2>&1"
+    echo "OK"
+}
+
+stop_gui() {
+    [ -f "$GUI_PIDFILE" ] && start-stop-daemon -K -q -p "$GUI_PIDFILE" -s TERM
+    rm -f "$GUI_PIDFILE"
 }
 
 stop() {
+    stop_gui
     printf "Deteniendo %s: " "$NAME"
     start-stop-daemon -K -q -p "$PIDFILE" -s TERM
     i=0
