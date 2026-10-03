@@ -1,0 +1,18 @@
+#!/bin/sh
+# /etc/init.d/S49agentos-firstboot — asistente de primer arranque.
+# Se ejecuta ANTES de que Weston tome la pantalla (S50), en tty1 (visible).
+# Solo pide la API key o el modelo; escribe /etc/default/agentos y marca
+# /etc/agentos/.configured. Relanzar manualmente: agentos-config
+
+start() {
+    if [ ! -f /etc/agentos/.configured ]; then
+        /opt/agentos/board/agentos/first-boot.sh < /dev/tty1 > /dev/tty1 2>&1
+    fi
+}
+
+case "$1" in
+    start) start ;;
+    stop|restart|reload) ;;
+    *) echo "Uso: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0
