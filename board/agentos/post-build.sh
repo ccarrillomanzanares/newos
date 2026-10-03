@@ -13,6 +13,11 @@ install -D -m 0644 "$BOARD_DIR/grub.cfg" "$TARGET_DIR/usr/share/agentos/grub.cfg
 install -D -m 0755 "$BOARD_DIR/first-boot.sh" "$TARGET_DIR/opt/agentos/board/agentos/first-boot.sh"
 install -D -m 0755 "$BOARD_DIR/agentos-config.sh" "$TARGET_DIR/opt/agentos/board/agentos/agentos-config.sh"
 
+# Los scripts de arranque del overlay tienen que ser ejecutables: rcS los lanza
+# con "$i start", y un fichero sin bit x falla con "Permission denied" y el
+# servicio (Weston incluido) NO arranca — sin ningún error visible en pantalla.
+chmod 0755 "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* 2>/dev/null || true
+
 # sudo: permisos estrictos (git no conserva 0440) e inclusión de /etc/sudoers.d
 if [ -f "$TARGET_DIR/etc/sudoers.d/agent" ]; then
     chmod 0440 "$TARGET_DIR/etc/sudoers.d/agent"
