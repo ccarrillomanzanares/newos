@@ -21,8 +21,8 @@ BR2_TOOLCHAIN_BUILDROOT_CXX=y
 # --- Sistema ----------------------------------------------------------------
 BR2_TARGET_GENERIC_HOSTNAME="agentos"
 BR2_TARGET_GENERIC_ISSUE="AgentOS v0.1 - sistema operativo conversacional"
-# root SIN contraseña (solo desarrollo). Cambiar con 'passwd' tras instalar.
-BR2_TARGET_GENERIC_ROOT_PASSWD=""
+# root con contraseña "agent" (desarrollo). Cambiar con 'passwd' tras instalar.
+BR2_TARGET_GENERIC_ROOT_PASSWD="agent"
 BR2_INIT_BUSYBOX=y
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
 BR2_TARGET_GENERIC_GETTY_PORT="tty1"

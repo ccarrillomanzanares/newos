@@ -1,3 +1,5 @@
 # usuario uid grupo gid contraseña home shell grupos comentario
 # Contraseña en claro "agent" (=agent): cámbiala con 'passwd agent' tras instalar.
 agent -1 agent -1 =agent /home/agent /bin/bash audio,video,input,wheel AgentOS user
+# root: Buildroot no admite 'root' en esta tabla; su contraseña ("agent") se fija con
+# BR2_TARGET_GENERIC_ROOT_PASSWD en build/configs/agentos_defconfig.

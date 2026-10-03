@@ -18,9 +18,18 @@ export AGENTOS_LOG_FORMAT=json
 export PYTHONPATH="$AGENTOS_HOME"
 export HOME=/root
 
-[ -f /etc/default/agentos ] && . /etc/default/agentos   # sobrescrituras locales
+# Sobrescrituras locales (las escribe first-boot.sh / agentos-config).
+# set -a: exporta las variables nuevas para que las herede AgentD.
+load_config() {
+    [ -f /etc/default/agentos ] && { set -a; . /etc/default/agentos; set +a; }
+}
 
 start() {
+    # Primer arranque: mostrar asistente de configuración si no está configurado
+    if [ ! -f /etc/agentos/.configured ]; then
+        /opt/agentos/board/agentos/first-boot.sh
+    fi
+    load_config
     printf "Iniciando %s: " "$NAME"
     mkdir -p /run/agentos /data/agent /data/models
     chmod 0750 /run/agentos

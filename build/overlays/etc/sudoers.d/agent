@@ -1,0 +1,4 @@
+# AgentOS: el usuario agent puede usar sudo con su contraseña
+%wheel ALL=(ALL:ALL) ALL
+# El agente puede reiniciar servicios y apagar sin contraseña
+agent ALL=(ALL) NOPASSWD: /sbin/reboot, /sbin/poweroff, /sbin/halt, /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff
