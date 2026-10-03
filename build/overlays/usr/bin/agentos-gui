@@ -29,12 +29,32 @@ trap '[ "$child" -gt 0 ] && kill "$child" 2>/dev/null; exit 0' TERM INT
 
 WAIT_MAX="${AGENTOS_GUI_WAIT_MAX:-300}"
 
+# Nombre del socket de Weston. Se arranca con --socket=wayland-0 (ver S71weston)
+# pero si por lo que sea hubiera otro, se acepta cualquiera como respaldo.
+WAYLAND_SOCKET="${XDG_RUNTIME_DIR:-/run/user/0}/${WAYLAND_DISPLAY:-wayland-0}"
+
+# Acepta wayland-0 o, si no está, cualquier wayland-N que haya en el runtime dir.
+# Sin esto, un desajuste en el nombre del socket deja al supervisor esperando
+# para siempre y la interfaz nunca llega a arrancar.
+find_wayland_socket() {
+    [ -S "$WAYLAND_SOCKET" ] && return 0
+    for s in "$XDG_RUNTIME_DIR"/wayland-*; do
+        case "$s" in *.lock) continue ;; esac
+        [ -S "$s" ] || continue
+        WAYLAND_SOCKET="$s"
+        export WAYLAND_DISPLAY="$(basename "$s")"
+        echo "[gui] usando el socket Wayland $s"
+        return 0
+    done
+    return 1
+}
+
 wait_for_deps() {
     n=0
-    while [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] || [ ! -S "$AGENTOS_SOCKET" ]; do
+    while ! find_wayland_socket || [ ! -S "$AGENTOS_SOCKET" ]; do
         n=$((n + 1))
         if [ "$n" -ge "$WAIT_MAX" ]; then
-            echo "[gui] sin compositor ($XDG_RUNTIME_DIR/$WAYLAND_DISPLAY) ni agente ($AGENTOS_SOCKET) tras ${WAIT_MAX} s"
+            echo "[gui] sin compositor ($XDG_RUNTIME_DIR/wayland-*) ni agente ($AGENTOS_SOCKET) tras ${WAIT_MAX} s"
             return 1
         fi
         sleep 1
@@ -53,10 +73,9 @@ while :; do
     child=0
     echo "[gui] la interfaz terminó (código $rc); se relanza en 2 s"
     # Dejar rastro de POR QUÉ murió: si cog no puede arrancar, sin esto el
-    # fallo es invisible (la pantalla solo muestra el fondo del compositor).
+    # Sin esto el fallo de cog es invisible para quien mira la pantalla.
     tail -n 20 "$GUI_LOG" 2>/dev/null | sed 's/^/[gui-log] /'
     command -v cog >/dev/null 2>&1 || echo "[gui] cog NO está en el PATH"
-    [ -n "$WAYLAND_DISPLAY" ] && [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] \
-        || echo "[gui] socket Wayland ausente: $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+    [ -S "$WAYLAND_SOCKET" ] || echo "[gui] socket Wayland ausente: $WAYLAND_SOCKET"
     sleep 2
 done

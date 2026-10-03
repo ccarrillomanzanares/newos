@@ -174,22 +174,39 @@ class ClientConnection:
 class AgentServer:
     """Servidor asyncio sobre socket UNIX."""
 
-    def __init__(self, agent: Agent, socket_path: str | Path) -> None:
+    def __init__(self, agent: Agent | None, socket_path: str | Path, error: str | None = None) -> None:
         self.agent = agent
         self.socket_path = Path(socket_path)
+        # Si el LLM no estaba disponible al arrancar, se guarda el motivo para
+        # poder responder a la interfaz en vez de dejarla sin explicación.
+        self.error = error
         self._server: asyncio.AbstractServer | None = None
 
     async def start(self) -> None:
-        await self.agent.start()
+        if self.agent is not None:
+            await self.agent.start()
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         if self.socket_path.exists():
             self.socket_path.unlink()  # socket huérfano de una ejecución anterior
         self._server = await asyncio.start_unix_server(self._handle, path=str(self.socket_path), limit=STREAM_LIMIT)
         os.chmod(self.socket_path, 0o660)
         logger.info("Escuchando en socket UNIX", extra={"socket": str(self.socket_path)})
+        if self.error:
+            logger.warning("AgentD escucha SIN agente: los mensajes del usuario serán rechazados con el motivo")
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         logger.info("Cliente conectado")
+        if self.agent is None:
+            # Sin backend LLM el socket sigue vivo, pero no se puede atender.
+            # Se responde con el motivo para que la interfaz pueda mostrarlo en
+            # pantalla en vez de quedarse muda.
+            with contextlib.suppress(Exception):
+                writer.write(encode({"type": "error", "message": self.error or "La IA no está disponible (sin backend LLM)."}))
+                await writer.drain()
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+            return
         await ClientConnection(self.agent, reader, writer).run()
         logger.info("Cliente desconectado")
 
@@ -199,7 +216,8 @@ class AgentServer:
             await self._server.wait_closed()
         with contextlib.suppress(FileNotFoundError):
             self.socket_path.unlink()
-        await self.agent.close()
+        if self.agent is not None:
+            await self.agent.close()
 
 
 # ---------------------------------------------------------------------------
@@ -268,8 +286,20 @@ class AgentClient:
 # ---------------------------------------------------------------------------
 
 async def serve(config: AgentConfig, pidfile: Path | None = None) -> None:
-    agent = Agent(config)
-    server = AgentServer(agent, config.socket_path)
+    # AgentD no se cae si el LLM no está disponible: mantiene el socket abierto y
+    # deja que la interfaz arranque y lo diga en pantalla. Antes, sin backend, el
+    # proceso moría aquí y la GUI se quedaba sin arrancar — el SO entero se
+    # quedaba en negro por un fallo del modelo.
+    agent: Agent | None = None
+    agent_error: str | None = None
+    try:
+        agent = Agent(config)
+    except Exception as exc:  # noqa: BLE001
+        agent_error = str(exc)
+        logger.error("AgentD arranca SIN backend LLM: %s", exc)
+        logger.error("La interfaz arrancará igualmente y reportará el problema al usuario.")
+
+    server = AgentServer(agent, config.socket_path, error=agent_error)
     await server.start()
     if pidfile:
         pidfile.parent.mkdir(parents=True, exist_ok=True)

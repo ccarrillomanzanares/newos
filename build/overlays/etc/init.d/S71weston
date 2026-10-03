@@ -11,7 +11,10 @@ start() {
     printf "Starting $DAEMON: "
     mkdir -p /run/user/0
     chmod 0700 /run/user/0
-    start-stop-daemon -S -q -b -m -p $PIDFILE -x /usr/bin/weston -- --idle-time=0
+    # --socket=wayland-0 fija el nombre del socket. Sin esto Weston coge el
+    # primer nombre libre (en la VM acababa en wayland-1), y quien espere
+    # "wayland-0" se queda colgado para siempre.
+    start-stop-daemon -S -q -b -m -p $PIDFILE -x /usr/bin/weston -- --idle-time=0 --socket=wayland-0
     [ $? = 0 ] && echo "OK" || echo "FAIL"
 }
 

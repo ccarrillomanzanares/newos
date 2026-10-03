@@ -49,8 +49,11 @@ start() {
     if [ -S "$AGENTOS_SOCKET" ]; then
         echo "OK"
     else
-        echo "FALLO (ver $LOGFILE)"
-        return 1
+        # La interfaz ES la pantalla del SO: se arranca igualmente. Si AgentD no
+        # está, ui/gui/server.py lo intenta en cada petición y la interfaz puede
+        # decir en pantalla que no hay agente, en vez de dejar el compositor
+        # vacío sin ninguna explicación.
+        echo "AVISO (AgentD no responde; la interfaz se arranca igual: ver $LOGFILE)"
     fi
     start_gui
 }
