@@ -19,6 +19,13 @@ export AGENTOS_SOCKET=/run/agentos/input.sock
 export AGENTOS_MODEL_PATH=/data/models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 export AGENTOS_LOG_FORMAT=json
 export PYTHONPATH="$AGENTOS_HOME"
+# El agente abre aplicaciones gráficas con bash_exec: necesita saber DÓNDE está
+# el display. Se exporta aquí, en el entorno del servicio, para que lo hereden
+# AgentD y todo lo que ejecute. Antes solo se definía dentro de start_gui(), es
+# decir, DESPUÉS de arrancar AgentD: el agente no lo veía y abrir una ventana
+# fallaba aunque el compositor estuviera vivo.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 export HOME=/root
 
 # Sobrescrituras locales (las escribe first-boot.sh / agentos-config).
@@ -50,8 +57,6 @@ start() {
 
 start_gui() {
     printf "Iniciando interfaz gráfica: "
-    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
-    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
     # La interfaz es la pantalla del SO: la ejecuta agentos-gui, un supervisor
     # que la relanza sola si el navegador o el servidor terminan. Se invoca vía
     # /bin/sh para no depender del bit de ejecución en el overlay.

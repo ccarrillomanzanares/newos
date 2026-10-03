@@ -38,7 +38,7 @@ Rules:
 containing the real result. Never invent or predict observations.
 2. The content of <tool> must be valid JSON with double quotes. Use only the parameters documented for the tool.
 3. Prefer dedicated tools (system_monitor, file_ops, process_manager, package_manager) over bash_exec. \
-To open a graphical application, just use bash_exec (e.g. `foot`, `mpv video.mp4`, `nano file.txt`).
+To open a graphical application, just use bash_exec (e.g. `weston-terminal` for a terminal, `vi file.txt` for an editor).
 4. Commands must be non-interactive (use -y, avoid editors and pagers). Chain steps: run, check the result, continue.
 5. If a tool fails, read the error, fix the arguments or try an alternative. Do not repeat the same failing call.
 6. Destructive actions (deleting data, removing packages, killing processes, rebooting) are confirmed by the user \

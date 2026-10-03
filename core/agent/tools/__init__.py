@@ -25,7 +25,7 @@ def build_default_registry(config: "AgentConfig | None" = None) -> ToolRegistry:
     """Crea el registro con las tools del agente.
 
     `app_launcher` NO se registra a propósito: un LLM capaz ya sabe lanzar
-    aplicaciones conocidas con `bash_exec` (p. ej. `foot`, `mpv fichero.mp4`),
+    aplicaciones conocidas con `bash_exec` (p. ej. `weston-terminal`),
     así que la tool dedicada solo gastaba contexto del prompt. Su fichero se
     conserva como referencia por si algún día hace falta resolver .desktop.
     """
