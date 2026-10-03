@@ -9,6 +9,9 @@ OUT := $(BR_OUT)/images
 
 # Con el modelo GGUF real (ejecutar antes: make download-model)
 run: dev-agent
+# Interfaz gráfica + AgentD (leer: export OLLAMA_API_KEY=...)
+gui:
+	AGENTOS_UI=gui ./scripts/run_dev.sh
 # Ollama Cloud (necesita: export OLLAMA_API_KEY=...; modelo opcional: OLLAMA_MODEL)
 dev-cloud:
 	@test -n "$$OLLAMA_API_KEY" || { echo "Falta OLLAMA_API_KEY (export OLLAMA_API_KEY=tu_clave)"; exit 1; }

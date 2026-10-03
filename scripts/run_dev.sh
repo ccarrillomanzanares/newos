@@ -26,4 +26,8 @@ for _ in $(seq 1 600); do
   kill -0 $! 2>/dev/null || { echo "[dev] AgentD terminó; ver $RUN_DIR/agentd.log"; tail -20 "$RUN_DIR/agentd.log"; exit 1; }
   sleep 0.5
 done
-"$PY" -m ui.tui.chat --socket "$SOCK"
+if [[ "${AGENTOS_UI:-tui}" == "gui" ]]; then
+  "$PY" -m ui.gui.launch --socket "$SOCK"
+else
+  "$PY" -m ui.tui.chat --socket "$SOCK"
+fi
