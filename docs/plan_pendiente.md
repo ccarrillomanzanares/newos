@@ -37,7 +37,7 @@ De ahí se derivan **siete pilares**:
 | 2 | Agente conversacional que se autoadministra | Parcial |
 | 3 | Conocimiento de TI (documentación del sistema accesible al agente) | No empezado |
 | 4 | LLM propio (entrenado/ajustado desde cero) | No empezado |
-| 5 | Interfaz mínima estilo _Her_ (sin iconos, sin barras, orbe) | Hecho |
+| 5 | Interfaz mínima (sin iconos, sin barras, orbe) | Hecho |
 | 6 | Voz (STT + TTS) | Esbozado, sin integrar |
 | 7 | Aplicaciones gráficas (navegador, editor, ssh, vídeo) | Parcial |
 
@@ -123,7 +123,7 @@ Estas reglas son **permanentes** y no se pueden relajar:
 
 * **AgentD**: servidor de socket UNIX (`core/ipc/socket_server.py`) con agente (`core/agent/agent.py`), gestión de contexto (`core/llm/context_manager.py`) e inferencia (`core/llm/inference.py`).
 
-* **Interfaz _Her_**: servidor WebSocket (`ui/gui/server.py`), lanzador kiosk (`ui/gui/launch.py`) y frontend con orbe animado (`ui/gui/static/index.html`).
+* **Interfaz gráfica**: servidor WebSocket (`ui/gui/server.py`), lanzador (`ui/gui/launch.py`) y frontend con orbe animado (`ui/gui/static/index.html`).
 
 * **Chat de terminal** (`ui/tui/chat.py`) para desarrollo.
 
@@ -157,7 +157,7 @@ Estas reglas son **permanentes** y no se pueden relajar:
 
 ## 5\. BLOQUEANTE 1 — Cerrar el arranque automático
 
-**Objetivo:** encender el portátil y llegar a la interfaz _Her_ sin escribir nada (salvo la API key la primera vez).
+**Objetivo:** encender el portátil y llegar a la interfaz sin escribir nada (salvo la API key la primera vez).
 
 **Ficheros implicados:**
 
@@ -169,7 +169,7 @@ Estas reglas son **permanentes** y no se pueden relajar:
 
 * `build/overlays/etc/init.d/S99agentos` — AgentD + interfaz
 
-* `build/overlays/etc/xdg/weston/weston.ini` — kiosk
+* `build/overlays/etc/xdg/weston/weston.ini` — shell desktop
 
 * `board/agentos/post-build.sh` — autologin por `inittab`
 
@@ -182,7 +182,7 @@ S01install            → mensaje de bienvenida (solo en live)
 S49agentos-firstboot  → asistente en tty1 (solo si no hay /etc/agentos/.configured)
 S60agentos-pip        → instala faster-whisper y sounddevice en segundo plano
 S70seatd              → gestor de asientos (lo instala Buildroot)
-S71weston             → compositor Wayland en kiosk
+S71weston             → compositor Wayland (shell desktop)
 S99agentos            → AgentD + interfaz gráfica (cog)
 ```
 
@@ -198,7 +198,7 @@ S99agentos            → AgentD + interfaz gráfica (cog)
 
 5. Consola de respaldo: `Ctrl+Alt+F2` (autologin como `agent`).
 
-**Criterio de aceptación:** encender → (asistente la primera vez) → aparece el orbe de la interfaz _Her_ a pantalla completa, sin login.
+**Criterio de aceptación:** encender → (asistente la primera vez) → aparece el orbe a pantalla completa, sin login.
 
 **Riesgo conocido:** en VirtualBox el driver de vídeo debe ser `VMSVGA` y el kernel necesita `CONFIG_DRM_VMWGFX` (ya añadido). Si se usa `VBoxVGA` no habrá aceleración.
 
@@ -344,7 +344,7 @@ S99agentos            → AgentD + interfaz gráfica (cog)
 
 **Objetivo:** «cuando sea necesario mostrar información al usuario... editores, película, ssh, navegador».
 
-**Estado:** el compositor Weston y el navegador `cog` (WPE WebKit) ya están en el defconfig. `cog` es lo que muestra la interfaz _Her_.
+**Estado:** el compositor Weston y el navegador `cog` (WPE WebKit) ya están en el defconfig. `cog` es lo que muestra la interfaz.
 
 **Pasos:**
 
@@ -360,7 +360,7 @@ S99agentos            → AgentD + interfaz gráfica (cog)
 
 6. **Lanzador genérico:** una herramienta `launch_app` que resuelva ficheros `.desktop` y arranque la aplicación bajo Weston.
 
-**Criterio de aceptación:** el usuario dice «ábreme el navegador en [wikipedia.org](http://wikipedia.org)» y aparece una ventana con la página, sobre la interfaz _Her_.
+**Criterio de aceptación:** el usuario dice «ábreme el navegador en [wikipedia.org](http://wikipedia.org)» y aparece una ventana con la página, sobre la interfaz.
 
 **Riesgo:** cada aplicación añade tamaño a la imagen. Vigilar que el ISO no supere lo razonable para un USB de 2 GB.
 

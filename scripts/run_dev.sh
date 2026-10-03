@@ -16,7 +16,7 @@ if [[ -n "${OLLAMA_API_KEY:-}" && -z "${AGENTOS_LLM_BACKEND:-}" ]]; then
   export AGENTOS_LLM_BACKEND=openai
   export AGENTOS_OPENAI_BASE_URL="${AGENTOS_OPENAI_BASE_URL:-https://ollama.com/v1}"
   export AGENTOS_OPENAI_API_KEY="$OLLAMA_API_KEY"
-  export AGENTOS_OPENAI_MODEL="${AGENTOS_OPENAI_MODEL:-${OLLAMA_MODEL:-llama3.1:8b}}"
+  export AGENTOS_OPENAI_MODEL="${AGENTOS_OPENAI_MODEL:-${OLLAMA_MODEL:-deepseek-v4.1-flash}}"
   echo "[dev] Usando Ollama Cloud → modelo: $AGENTOS_OPENAI_MODEL"
 elif [[ ! -f "$MODEL" ]]; then
   echo "[dev] AVISO: no existe $MODEL -> se usará Ollama local o fallará"

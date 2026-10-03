@@ -19,7 +19,7 @@ gui:
 dev-cloud:
 	@test -n "$$OLLAMA_API_KEY" || { echo "Falta OLLAMA_API_KEY (export OLLAMA_API_KEY=tu_clave)"; exit 1; }
 	AGENTOS_LLM_BACKEND=openai AGENTOS_OPENAI_BASE_URL=https://ollama.com/v1 \
-	AGENTOS_OPENAI_API_KEY="$$OLLAMA_API_KEY" AGENTOS_OPENAI_MODEL="$${OLLAMA_MODEL:-gpt-oss:120b}" \
+	AGENTOS_OPENAI_API_KEY="$$OLLAMA_API_KEY" AGENTOS_OPENAI_MODEL="$${OLLAMA_MODEL:-deepseek-v4.1-flash}" \
 	./scripts/run_dev.sh
 
 install-deps:

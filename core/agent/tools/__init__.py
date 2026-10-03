@@ -17,12 +17,18 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Tool", "ToolResult", "ToolRegistry", "RiskLevel", "BashExecTool", "FileOpsTool", "ProcessManagerTool",
-    "SystemMonitorTool", "PackageManagerTool", "AppLauncherTool", "build_default_registry",
+    "SystemMonitorTool", "PackageManagerTool", "build_default_registry",
 ]
 
 
 def build_default_registry(config: "AgentConfig | None" = None) -> ToolRegistry:
-    """Crea un registro con todas las tools v0.1 configuradas."""
+    """Crea el registro con las tools del agente.
+
+    `app_launcher` NO se registra a propósito: un LLM capaz ya sabe lanzar
+    aplicaciones conocidas con `bash_exec` (p. ej. `foot`, `mpv fichero.mp4`),
+    así que la tool dedicada solo gastaba contexto del prompt. Su fichero se
+    conserva como referencia por si algún día hace falta resolver .desktop.
+    """
     from ..config import get_config
 
     cfg = config or get_config()
@@ -32,5 +38,4 @@ def build_default_registry(config: "AgentConfig | None" = None) -> ToolRegistry:
     registry.register(ProcessManagerTool())
     registry.register(SystemMonitorTool())
     registry.register(PackageManagerTool(timeout=cfg.package_timeout))
-    registry.register(AppLauncherTool())
     return registry

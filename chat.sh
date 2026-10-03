@@ -3,14 +3,14 @@
 # Uso:
 #   ./chat.sh                          → modelo local (busca .gguf automáticamente)
 #   OLLAMA_API_KEY=xxx ./chat.sh       → Ollama Cloud (no necesita modelo local)
-#   OLLAMA_MODEL=llama3.1:8b ./chat.sh → elige el modelo cloud
+#   OLLAMA_MODEL=deepseek-v4.1-flash ./chat.sh → elige el modelo cloud
 set -euo pipefail
 cd "$(dirname "$0")"
 PY=${PYTHON:-python3}
 
 # ── 1. Elegir backend ─────────────────────────────────────────────────────────
 if [[ -n "${OLLAMA_API_KEY:-}" ]]; then
-    MODEL_CLOUD="${OLLAMA_MODEL:-llama3.1:8b}"
+    MODEL_CLOUD="${OLLAMA_MODEL:-deepseek-v4.1-flash}"
     echo "[AgentOS] Usando Ollama Cloud → modelo: $MODEL_CLOUD"
     export AGENTOS_LLM_BACKEND=openai
     export AGENTOS_OPENAI_BASE_URL=https://ollama.com/v1

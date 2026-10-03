@@ -52,9 +52,11 @@ start_gui() {
     printf "Iniciando interfaz gráfica: "
     export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
     export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
-    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
+    # La interfaz es la pantalla del SO: la ejecuta agentos-gui, un supervisor
+    # que la relanza sola si el navegador o el servidor terminan. Se invoca vía
+    # /bin/sh para no depender del bit de ejecución en el overlay.
     start-stop-daemon -S -q -b -m -p "$GUI_PIDFILE" \
-        -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m ui.gui.launch >> $GUI_LOGFILE 2>&1"
+        -x /bin/sh -- -c "exec /usr/bin/agentos-gui"
     echo "OK"
 }
 

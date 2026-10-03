@@ -1,4 +1,4 @@
-"""Arranca el servidor de la interfaz y abre un navegador a pantalla completa (kiosk).
+"""Arranca el servidor de la interfaz y abre el navegador en modo kiosco (ventana completa).
 
 * Wayland: cog → chromium → firefox
 * X11:     chromium → firefox
@@ -26,7 +26,8 @@ def browser_command(url: str) -> list[str] | None:
     candidates: list[list[str]] = []
     if wayland:
         if shutil.which("cog"):
-            candidates.append(["cog", "--platform=gl", url])
+            # cog 0.18 solo acepta --platform={headless,wayland,drm}; "gl" NO existe
+            candidates.append(["cog", "--platform=wayland", url])
         if chromium:
             candidates.append([chromium, "--ozone-platform=wayland", *chrome_args])
     if wayland or x11:

@@ -1,4 +1,4 @@
-"""Servidor de la interfaz «Her»: HTTP estático + WebSocket /ws ↔ AgentD (socket Unix, NDJSON).
+"""Servidor de la interfaz gráfica: HTTP estático + WebSocket /ws ↔ AgentD (socket Unix, NDJSON).
 
 Protocolo navegador → servidor:
     {"type": "message", "text": "..."}

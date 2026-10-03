@@ -1,0 +1,56 @@
+#!/bin/sh
+# /usr/bin/agentos-gui — supervisor de la interfaz de AgentOS.
+#
+# La interfaz ES el sistema operativo: igual que un escritorio no "se cierra",
+# el orbe no puede quedarse cerrado. Si el navegador o el servidor de la
+# interfaz terminan —un cierre accidental, un fallo de cog, un OOM—, este
+# supervisor los vuelve a levantar. Lo lanza S99agentos y es lo que mantiene
+# la pantalla viva.
+#
+# Espera a que existan el socket del compositor (Weston) y el de AgentD antes
+# de arrancar, de modo que no importa el orden exacto del boot ni que alguno
+# se reinicie por su cuenta.
+
+AGENTOS_HOME="${AGENTOS_HOME:-/opt/agentos}"
+PYTHON="${AGENTOS_PYTHON:-/usr/bin/python3}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export AGENTOS_SOCKET="${AGENTOS_SOCKET:-/run/agentos/input.sock}"
+export PYTHONPATH="$AGENTOS_HOME"
+
+GUI_LOG="${GUI_LOG:-/var/log/agentos-gui.log}"
+# Redirigir a un log si se puede; si no, seguir sin romper el arranque.
+: >>"$GUI_LOG" 2>/dev/null && exec >>"$GUI_LOG" 2>&1
+
+# Al parar el servicio (S99agentos stop) hay que llevarse también al hijo,
+# o el navegador quedaría huérfano sobre Weston.
+child=0
+trap '[ "$child" -gt 0 ] && kill "$child" 2>/dev/null; exit 0' TERM INT
+
+WAIT_MAX="${AGENTOS_GUI_WAIT_MAX:-300}"
+
+wait_for_deps() {
+    n=0
+    while [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] || [ ! -S "$AGENTOS_SOCKET" ]; do
+        n=$((n + 1))
+        if [ "$n" -ge "$WAIT_MAX" ]; then
+            echo "[gui] sin compositor ($XDG_RUNTIME_DIR/$WAYLAND_DISPLAY) ni agente ($AGENTOS_SOCKET) tras ${WAIT_MAX} s"
+            return 1
+        fi
+        sleep 1
+    done
+    return 0
+}
+
+cd "$AGENTOS_HOME" 2>/dev/null || { echo "[gui] no existe $AGENTOS_HOME"; exit 1; }
+
+while :; do
+    wait_for_deps || exit 1
+    "$PYTHON" -m ui.gui.launch &
+    child=$!
+    wait "$child"
+    rc=$?
+    child=0
+    echo "[gui] la interfaz terminó (código $rc); se relanza en 2 s"
+    sleep 2
+done

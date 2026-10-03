@@ -48,8 +48,11 @@ def system_prompt(full: bool) -> str:
         return SHORT_SYSTEM
 
 
-def tool(name: str, **args: object) -> str:
-    return "<tool>" + json.dumps({"name": name, "args": args}, ensure_ascii=False) + "</tool>"
+def tool(tool_name: str, **args: object) -> str:
+    # Parámetro llamado tool_name (no `name`) para que las tools que tienen a su
+    # vez un argumento `name` — p. ej. process_manager(action="kill", name="ffmpeg")
+    # — no provoquen "got multiple values for argument 'name'".
+    return "<tool>" + json.dumps({"name": tool_name, "args": args}, ensure_ascii=False) + "</tool>"
 
 
 def obs(name: str, body: str) -> str:
@@ -85,8 +88,8 @@ SYNTHETIC: list[tuple[str, list[tuple[str, str]], str]] = [
        obs("file_ops", "Escritos 17 caracteres en /root/notas.txt"))],
      "He creado ~/notas.txt con el texto «reunión a las 10»."),
     ("Abre firefox",
-     [("Lanzo Firefox.\n" + tool("app_launcher", action="launch", app="firefox"),
-       obs("app_launcher", "Lanzado vía Sway: firefox"))],
+     [("Lanzo Firefox en segundo plano.\n" + tool("bash_exec", command="firefox &"),
+       obs("bash_exec", "exit_code: 0\nstdout: (vacío)"))],
      "Firefox se está abriendo."),
     ("What's my IP address?",
      [("Checking network interfaces.\n" + tool("system_monitor", sections=["network"]),

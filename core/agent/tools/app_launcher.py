@@ -1,7 +1,13 @@
-"""Tool ``app_launcher``: lanza y cierra aplicaciones gráficas en Wayland (Sway) o X11.
+"""Tool ``app_launcher``: lanza y cierra aplicaciones gráficas bajo Weston (Wayland) o X11.
 
-En AgentOS el compositor es Sway: el agente delega en ``swaymsg exec``.
-Fuera de Sway se lanza el proceso directamente heredando DISPLAY/WAYLAND_DISPLAY.
+NO está registrada por defecto en el agente (ver ``tools/__init__.py``): un LLM
+capaz lanza aplicaciones conocidas con ``bash_exec``. Se conserva como referencia
+y por si hace falta resolver ficheros ``.desktop``.
+
+El compositor de AgentOS es **Weston**, que no expone una interfaz de comandos
+para gestionar ventanas (Sway sí, con ``swaymsg``, pero Sway exige systemd y
+AgentOS usa BusyBox init: no es una opción). Fuera de un compositor con IPC se
+lanza el proceso directamente heredando DISPLAY/WAYLAND_DISPLAY.
 """
 
 from __future__ import annotations

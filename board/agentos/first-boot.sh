@@ -58,7 +58,7 @@ if [ "$OPT" = 3 ]; then
     [ -f "$MODEL_PATH" ] || echo "AVISO: $MODEL_PATH no existe todavía."
 else
     if [ "$OPT" = 1 ]; then
-        BASE_URL=https://ollama.com/v1; DEF_MODEL=llama3.1:8b; PROV="Ollama Cloud"
+        BASE_URL=https://ollama.com/v1; DEF_MODEL=deepseek-v4.1-flash; PROV="Ollama Cloud"
     else
         BASE_URL=https://api.openai.com/v1; DEF_MODEL=gpt-4o-mini; PROV="OpenAI"
     fi
