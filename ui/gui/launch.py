@@ -26,8 +26,10 @@ def browser_command(url: str) -> list[str] | None:
     candidates: list[list[str]] = []
     if wayland:
         if shutil.which("cog"):
-            # cog 0.18 solo acepta --platform={headless,wayland,drm}; "gl" NO existe
-            candidates.append(["cog", "--platform=wayland", url])
+            # El módulo de plataforma Wayland de cog se llama "wl": el fichero es
+            # /usr/lib/cog/modules/libcogplatform-wl.so. Con "wayland" aborta con
+            # "cannot find module 'wayland'". Tampoco existe "gl".
+            candidates.append(["cog", "--platform=wl", url])
         if chromium:
             candidates.append([chromium, "--ozone-platform=wayland", *chrome_args])
     if wayland or x11:

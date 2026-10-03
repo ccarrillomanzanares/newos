@@ -128,6 +128,11 @@ BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_CROCUS=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_I915=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_VIRGL=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y
+# SVGA = GPU virtual de VirtualBox/VMware (vmsvga). Sin este driver, Mesa no
+# reconoce esa tarjeta, EGL falla con EGL_NOT_INITIALIZED y NI Weston NI cog
+# pueden pintar: la pantalla se queda en el fondo del compositor sin interfaz.
+# El kernel ya trae CONFIG_DRM_VMWGFX=y; esto es la parte de usuarios.
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SVGA=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
 BR2_PACKAGE_MESA3D_OPENGL_ES=y
 BR2_PACKAGE_SEATD=y
