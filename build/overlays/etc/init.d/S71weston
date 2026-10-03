@@ -1,0 +1,30 @@
+#!/bin/sh
+# /etc/init.d/S71weston — Weston (Wayland) en kiosk, como root.
+# El socket queda en /run/user/0/wayland-0 (lo usa S99agentos para la GUI).
+# Se ejecuta DESPUÉS de S70seatd (Weston necesita el gestor de asientos).
+
+DAEMON="weston"
+PIDFILE="/var/run/$DAEMON.pid"
+export XDG_RUNTIME_DIR=/run/user/0
+
+start() {
+    printf "Starting $DAEMON: "
+    mkdir -p /run/user/0
+    chmod 0700 /run/user/0
+    start-stop-daemon -S -q -b -m -p $PIDFILE -x /usr/bin/weston -- --idle-time=0
+    [ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+stop() {
+    printf "Stopping $DAEMON: "
+    start-stop-daemon -K -q -p $PIDFILE
+    [ $? = 0 ] && echo "OK" || echo "FAIL"
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
+exit $?
