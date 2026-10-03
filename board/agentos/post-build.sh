@@ -20,6 +20,16 @@ if [ -f "$TARGET_DIR/etc/sudoers.d/agent" ]; then
         echo '@includedir /etc/sudoers.d' >> "$TARGET_DIR/etc/sudoers"
 fi
 
+# Autologin en tty2 (consola de respaldo). BusyBox getty NO soporta -a,
+# así que se usa /bin/login -f (entra sin contraseña).
+if [ -f "$TARGET_DIR/etc/inittab" ]; then
+    if grep -q '^tty2::respawn:' "$TARGET_DIR/etc/inittab"; then
+        sed -i 's|^tty2::respawn:.*|tty2::respawn:/bin/login -f agent|' "$TARGET_DIR/etc/inittab"
+    else
+        echo 'tty2::respawn:/bin/login -f agent' >> "$TARGET_DIR/etc/inittab"
+    fi
+fi
+
 # El grub.cfg genérico de Buildroot en el rootfs confundiría la búsqueda de
 # /boot/grub/grub.cfg que hace la configuración embebida de GRUB.
 rm -f "$TARGET_DIR/boot/grub/grub.cfg"
