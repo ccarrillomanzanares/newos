@@ -115,6 +115,43 @@ CONFIG_FW_LOADER=y
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 
+# --- Almacenamiento INTEGRADO en el kernel (AgentOS NO tiene initramfs) ----
+# CRITICO. En una config de distro los controladores de disco son modulos (=m)
+# porque la distro los carga desde su initramfs ANTES de montar la raiz.
+# AgentOS no lleva initramfs, asi que si el controlador del disco es un modulo
+# el kernel NO PUEDE MONTAR LA RAIZ: arranca, no encuentra root, y se queda en
+# PANTALLA NEGRA SIN NINGUN MENSAJE (lo tapan quiet y loglevel=0).
+# Sintoma verificado: el .img arrancaba con el disco en IDE (ata_piix, =y) y
+# daba negro con el disco en SATA (ahci, era =m).
+# Solo se integran estos; el resto de drivers sigue siendo modulo.
+CONFIG_SATA_AHCI=y
+CONFIG_SATA_VIA=y
+CONFIG_SATA_SIS=y
+CONFIG_SATA_NV=y
+CONFIG_SATA_SIL=y
+CONFIG_SATA_SIL24=y
+CONFIG_PATA_AMD=y
+CONFIG_BLK_DEV_NVME=y
+CONFIG_NVME_CORE=y
+CONFIG_USB_STORAGE=y
+CONFIG_USB_UAS=y
+
+# --- Controladores USB HOST integrados (glue PCI) ---------------------------
+# CONFIG_USB_XHCI_HCD=y integra el nucleo xHCI, pero quien REGISTRA el
+# driver PCI es xhci-pci, que la config de distro deja como modulo (=m)
+# porque su initramfs lo carga antes de montar la raiz. AgentOS NO tiene
+# initramfs, asi que sin esto el kernel no ve NINGUN controlador USB y no
+# puede montar una raiz que viva en un pendrive.
+# Sintoma verificado: "[    2.227622] Waiting for root device PARTUUID=..."
+# (espera infinita por rootwait), CERO lineas de USB en el log, y pantalla
+# negra (quiet+loglevel=0 tapan el panic).
+# En SATA no se veia porque CONFIG_SATA_AHCI ya estaba integrado.
+CONFIG_USB_XHCI_PCI=y
+CONFIG_USB_XHCI_PCI_RENESAS=y
+CONFIG_MMC_BLOCK=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PCI=y
+
 # --- Entornos donde se PRUEBA AgentOS ---------------------------------------
 # No es hardware de usuario: son las máquinas virtuales donde se verifica el
 # sistema antes de tocar un portátil real. Si faltan, no hay forma de probarlo.
