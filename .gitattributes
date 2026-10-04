@@ -21,6 +21,11 @@ Makefile        text eol=lf
 build/overlays/etc/init.d/*   text eol=lf
 build/overlays/usr/bin/*      text eol=lf
 
+# Scripts del board (post-build, post-image, instalador, first-boot...).
+# post-image.sh se ejecuta en el build: con CRLF muere con
+# "/bin/sh^M: bad interpreter" y no se genera el .img.
+board/**/*.sh   text eol=lf
+
 # Binario: no tocar
 *.png           binary
 *.jpg           binary
