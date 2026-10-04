@@ -33,28 +33,71 @@ load_config() {
     [ -f /etc/default/agentos ] && { set -a; . /etc/default/agentos; set +a; }
 }
 
+# Esperar a que haya RED DE VERDAD antes de arrancar AgentD.
+# NetworkManager arranca en S45, pero conseguir IP y DNS tarda mas. Sin esto,
+# AgentD consulta el backend remoto (Ollama Cloud) antes de que exista internet,
+# no lo encuentra, termina con "No hay ningun backend LLM disponible" y muere.
+# El socket nunca llega a crearse y la interfaz se queda esperandolo.
+AGENTOS_NET_WAIT="${AGENTOS_NET_WAIT:-45}"
+wait_for_network() {
+    i=0
+    while [ "$i" -lt "$AGENTOS_NET_WAIT" ]; do
+        # 1.1.1.1 comprueba que hay ruta a internet; ollama.com, ademas, el DNS.
+        if ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && ping -c1 -W2 ollama.com >/dev/null 2>&1; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+# Lanza AgentD una vez y espera su socket (max. 60 s). Devuelve 0 si esta listo.
+launch_agentd() {
+    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
+    start-stop-daemon -S -q -b -m -p "$PIDFILE" \
+        -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
+    i=0
+    while [ ! -S "$AGENTOS_SOCKET" ] && [ $i -lt 60 ]; do
+        sleep 1; i=$((i + 1))
+    done
+    [ -S "$AGENTOS_SOCKET" ]
+}
+
 start() {
     load_config
     printf "Iniciando %s: " "$NAME"
     mkdir -p /run/agentos /data/agent /data/models
     chmod 0750 /run/agentos
-    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
-    start-stop-daemon -S -q -b -m -p "$PIDFILE" \
-        -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
-    # Esperar el socket (máx. 120 s)
-    i=0
-    while [ ! -S "$AGENTOS_SOCKET" ] && [ $i -lt 120 ]; do
-        sleep 1; i=$((i + 1))
-    done
-    if [ -S "$AGENTOS_SOCKET" ]; then
-        echo "OK"
+
+    # El agente necesita red para su backend LLM remoto: esperarla primero.
+    if wait_for_network; then
+        printf "[red lista] "
     else
-        # La interfaz ES la pantalla del SO: se arranca igualmente. Si AgentD no
-        # está, ui/gui/server.py lo intenta en cada petición y la interfaz puede
-        # decir en pantalla que no hay agente, en vez de dejar el compositor
-        # vacío sin ninguna explicación.
-        echo "AVISO (AgentD no responde; la interfaz se arranca igual: ver $LOGFILE)"
+        printf "[aviso: sin red tras %ss] " "$AGENTOS_NET_WAIT"
     fi
+
+    # Reintentar: si el backend aun no responde, el proceso termina y hay que
+    # volver a lanzarlo. Tres intentos con 5 s entre ellos.
+    intento=1
+    while [ "$intento" -le 3 ]; do
+        if launch_agentd; then
+            echo "OK"
+            start_gui
+            return 0
+        fi
+        if [ "$intento" -lt 3 ]; then
+            printf "[reintento %s] " "$intento"
+            sleep 5
+        fi
+        intento=$((intento + 1))
+    done
+
+    # La interfaz ES la pantalla del SO: se arranca igualmente. Si AgentD no
+    # está, ui/gui/server.py lo intenta en cada petición y la interfaz puede
+    # decir en pantalla que no hay agente, en vez de dejar el compositor
+    # vacío sin ninguna explicación.
+    echo "AVISO (AgentD no responde tras 3 intentos; la interfaz se arranca igual: ver $LOGFILE)"
     start_gui
 }
 

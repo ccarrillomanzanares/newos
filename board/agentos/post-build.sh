@@ -13,10 +13,28 @@ install -D -m 0644 "$BOARD_DIR/grub.cfg" "$TARGET_DIR/usr/share/agentos/grub.cfg
 install -D -m 0755 "$BOARD_DIR/first-boot.sh" "$TARGET_DIR/opt/agentos/board/agentos/first-boot.sh"
 install -D -m 0755 "$BOARD_DIR/agentos-config.sh" "$TARGET_DIR/opt/agentos/board/agentos/agentos-config.sh"
 
-# Los scripts de arranque del overlay tienen que ser ejecutables: rcS los lanza
-# con "$i start", y un fichero sin bit x falla con "Permission denied" y el
-# servicio (Weston incluido) NO arranca — sin ningún error visible en pantalla.
+# Scripts de arranque del overlay: primero normalizar a LF, y SOLO DESPUES dar
+# el bit de ejecucion. EL ORDEN IMPORTA:
+#   tr -d '\r' < f > f.lf && mv f.lf f
+# crea un fichero NUEVO con los permisos por defecto (0644) y el mv SUSTITUYE al
+# original: se pierde el +x. Si el chmod se hace antes, este bucle se lo lleva por
+# delante y rcS falla con "Permission denied" en TODOS los scripts, dejando el
+# sistema sin arrancar (visto en el build del 2026-10-04).
+# Necesitan LF porque editando desde Windows los scripts llegan con retorno de
+# carro y el shebang no es valido:
+#   "/bin/sh^M: bad interpreter: No such file or directory"
+for f in "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* "$TARGET_DIR"/usr/bin/agentos-gui \
+         "$TARGET_DIR"/usr/bin/agentos-config; do
+    [ -f "$f" ] || continue
+    tr -d '\r' < "$f" > "$f.lf" && mv -f "$f.lf" "$f"
+done
+
+# Y ahora si, ejecutables: rcS los lanza con "$i start", y un fichero sin bit x
+# falla con "Permission denied" y el servicio (Weston incluido) NO arranca —
+# sin ningún error visible en pantalla.
 chmod 0755 "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* 2>/dev/null || true
+chmod 0755 "$TARGET_DIR"/usr/bin/agentos-gui "$TARGET_DIR"/usr/bin/agentos-config 2>/dev/null || true
+
 
 # /var/log es un symlink a ../tmp en esta imagen, así que no se crea: el
 # destino existe siempre. Lo único que hace falta es que los scripts de arranque
@@ -52,6 +70,17 @@ fi
 # El grub.cfg genérico de Buildroot en el rootfs confundiría la búsqueda de
 # /boot/grub/grub.cfg que hace la configuración embebida de GRUB.
 rm -f "$TARGET_DIR/boot/grub/grub.cfg"
+
+# El paquete weston de Buildroot instala su propio /etc/init.d/S50weston, que
+# arranca weston SIN --socket fijo. Nuestro overlay añade S71weston (que sí lo
+# fija). Con los dos presentes, arrancan DOS weston: el primero coge wayland-0 y
+# el segundo falla ("Starting weston: OK" + "Starting weston: FAIL", visto en el
+# portátil real). Además el S50 exige seatd que no usamos.
+# Se elimina el de Buildroot: la única forma de arrancar Weston es la nuestra.
+if [ -f "$TARGET_DIR/etc/init.d/S50weston" ]; then
+    rm -f "$TARGET_DIR/etc/init.d/S50weston"
+    echo "post-build: eliminado S50weston de Buildroot (se usa S71weston del overlay)"
+fi
 
 # boot.img (primer sector BIOS) para genimage
 cp -f "$TARGET_DIR/lib/grub/i386-pc/boot.img" "$BINARIES_DIR/boot.img"

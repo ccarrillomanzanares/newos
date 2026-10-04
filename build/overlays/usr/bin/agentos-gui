@@ -49,16 +49,28 @@ find_wayland_socket() {
     return 1
 }
 
+# La interfaz solo necesita el COMPOSITOR para poder pintar. El socket del
+# agente es OPCIONAL: si AgentD no esta, ui/gui/server.py lo reintenta en cada
+# peticion y la interfaz lo dice en pantalla.
+#
+# Antes se exigia el socket del agente aqui, y eso contradecia la regla del
+# proyecto ("la interfaz ES el SO; no puede quedarse cerrada"): si AgentD moria
+# (p. ej. por arrancar antes que la red), la GUI esperaba 300 s y terminaba sin
+# arrancar nunca, dejando la pantalla en el fondo gris de Weston, sin orbe y sin
+# ninguna explicacion. Verificado en VirtualBox el 2026-10-04.
 wait_for_deps() {
     n=0
-    while ! find_wayland_socket || [ ! -S "$AGENTOS_SOCKET" ]; do
+    while ! find_wayland_socket; do
         n=$((n + 1))
         if [ "$n" -ge "$WAIT_MAX" ]; then
-            echo "[gui] sin compositor ($XDG_RUNTIME_DIR/wayland-*) ni agente ($AGENTOS_SOCKET) tras ${WAIT_MAX} s"
+            echo "[gui] sin compositor ($XDG_RUNTIME_DIR/wayland-*) tras ${WAIT_MAX} s"
             return 1
         fi
         sleep 1
     done
+    if [ ! -S "$AGENTOS_SOCKET" ]; then
+        echo "[gui] aviso: el socket del agente ($AGENTOS_SOCKET) no existe todavia; la interfaz arranca igual"
+    fi
     return 0
 }
 

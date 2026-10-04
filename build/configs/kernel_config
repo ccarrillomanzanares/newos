@@ -1,152 +1,148 @@
 # =============================================================================
-# AgentOS — fragmento de configuración del kernel Linux 6.6 (x86-64)
-# Se aplica SOBRE x86_64_defconfig (BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES).
-# Objetivo: kernel < 8 MB con solo lo necesario para AgentOS.
+# AgentOS — fragmento de configuración del kernel Linux (x86-64)
+#
+# Se aplica SOBRE el defconfig x86_64 del propio kernel:
+#   BR2_LINUX_KERNEL_USE_DEFCONFIG="x86_64"
+#   BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=".../kernel_config"
+# igual que hacen las distribuciones: el defconfig del kernel es la fuente única
+# de verdad para el HARDWARE, y este fichero solo contiene las diferencias
+# DELIBERADAS de AgentOS (política y entorno de pruebas, no catálogo de drivers).
+#
+# REGLA DE ORO: aquí NO se enumeran drivers.
+# Los drivers (GPU, red, audio, USB, almacenamiento, teclado, touchpad...) los
+# aporta el defconfig del kernel, compilados como módulos, y se cargan solos por
+# modalias vía udev — como en cualquier distribución. Así el sistema arranca en
+# hardware que no conocemos de antemano.
+#
+# Antes (hasta c980a136) este fichero enumeraba a mano el hardware soportado
+# (i915, iwlwifi, rtw88, snd-hda, r8169...), lo que dejaba el kernel rígido: lo
+# que no estaba en esa lista, simplemente no existía. Motivo del cambio y
+# evidencia medida: ver docs/ADR-001-kernel-generico.md.
+#
+# Al tocar este fichero: preferir AÑADIR política, no hardware. Si surge un
+# dispositivo concreto que falla, comprobar ANTES si el defconfig ya lo trae.
 # =============================================================================
 
-# --- General ----------------------------------------------------------------
+# --- Identidad ---------------------------------------------------------------
 CONFIG_LOCALVERSION="-agentos"
 CONFIG_DEFAULT_HOSTNAME="agentos"
-CONFIG_KERNEL_ZSTD=y                 # kernel comprimido con zstd (arranque rápido)
-CONFIG_PREEMPT_VOLUNTARY=y           # buena latencia para audio/STT sin coste de PREEMPT_RT
-CONFIG_HZ_1000=y
-CONFIG_NO_HZ_IDLE=y
-CONFIG_CGROUPS=y                     # aislamiento de recursos de llama-server/AgentD
-CONFIG_MEMCG=y
-CONFIG_CGROUP_PIDS=y
-CONFIG_NAMESPACES=y                  # sandbox de bash_exec (fase 2)
-CONFIG_USER_NS=y
-CONFIG_IKCONFIG=y                    # /proc/config.gz para que el agente lo inspeccione
-CONFIG_IKCONFIG_PROC=y
 
-# --- Boot silencioso --------------------------------------------------------
-# CONFIG_LOGO is not set             # elimina el logo del pingüino en el arranque
+# --- Compresión y arranque silencioso (requisito de producto) ----------------
+CONFIG_KERNEL_ZSTD=y
+# CONFIG_LOGO is not set
 # CONFIG_LOGO_LINUX_MONO is not set
 # CONFIG_LOGO_LINUX_VGA16 is not set
 # CONFIG_LOGO_LINUX_CLUT224 is not set
 
-# --- CPU / memoria (inferencia LLM) ------------------------------------------
-CONFIG_NUMA=y
-CONFIG_TRANSPARENT_HUGEPAGE=y        # mejora el rendimiento de mmap del GGUF
+# --- Latencia para voz (buena respuesta de audio sin coste de PREEMPT_RT) ----
+CONFIG_PREEMPT_VOLUNTARY=y
+CONFIG_HZ_1000=y
+CONFIG_NO_HZ_IDLE=y
+
+# --- Aislamiento de recursos (llama-server / AgentD / bash_exec) -------------
+CONFIG_CGROUPS=y
+CONFIG_MEMCG=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_NAMESPACES=y
+CONFIG_USER_NS=y
+
+# --- Rendimiento de inferencia con poca RAM (objetivo: 8 GB) ----------------
+CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 CONFIG_CPU_FREQ=y
 CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-CONFIG_X86_INTEL_PSTATE=y
-CONFIG_X86_AMD_PSTATE=y
-CONFIG_ZSWAP=y                       # swap comprimida para modelos grandes con poca RAM
+CONFIG_ZSWAP=y
 
-# --- Almacenamiento ---------------------------------------------------------
-CONFIG_BLK_DEV_NVME=y
-CONFIG_SATA_AHCI=y
-CONFIG_VIRTIO_BLK=y                  # QEMU
-CONFIG_EXT4_FS=y
-CONFIG_VFAT_FS=y                     # partición EFI
-CONFIG_SQUASHFS=y                    # rootfs A/B de solo lectura (fase 5)
+# --- Que el agente pueda inspeccionar su propio kernel ----------------------
+CONFIG_IKCONFIG=y
+CONFIG_IKCONFIG_PROC=y
+
+# --- IPC del agente y firewall gestionado por el agente ---------------------
+# CONFIG_UNIX es la base del socket de AgentD; NETFILTER/NF_TABLES es lo que el
+# agente manipula para administrar la red (pilar 2: autoadministración).
+CONFIG_UNIX=y
+CONFIG_NETFILTER=y
+CONFIG_NF_TABLES=y
+CONFIG_NFT_CT=y
+
+# --- Inferencia con memoria no uniforme (LLM) -------------------------------
+CONFIG_NUMA=y
+
+# --- Raíz A/B futura (fase 5) -----------------------------------------------
+CONFIG_SQUASHFS=y
 CONFIG_SQUASHFS_ZSTD=y
 CONFIG_OVERLAY_FS=y
-CONFIG_DM_CRYPT=y                    # LUKS2 (fase 5)
+
+# --- Cifrado (fase 5: LUKS2) ------------------------------------------------
+CONFIG_DM_CRYPT=y
 CONFIG_CRYPTO_XTS=y
 CONFIG_CRYPTO_AES_NI_INTEL=y
 
-# --- Red --------------------------------------------------------------------
-CONFIG_E1000E=y
-CONFIG_IGB=y
-CONFIG_R8169=y
-CONFIG_VIRTIO_NET=y                  # QEMU
-CONFIG_IWLWIFI=m                     # Intel WiFi (firmware en /lib/firmware)
-CONFIG_IWLMVM=m
-CONFIG_CFG80211=m
-CONFIG_MAC80211=m
-CONFIG_NETFILTER=y
-CONFIG_NF_TABLES=y                   # firewall gestionado por el agente
-CONFIG_NFT_CT=y
-CONFIG_UNIX=y                        # sockets UNIX (IPC AgentD)
-
-# --- Gráficos (DRM/KMS para Sway en fase 4) ----------------------------------
-CONFIG_DRM=y
-CONFIG_DRM_FBDEV_EMULATION=y
-CONFIG_DRM_I915=m
-CONFIG_DRM_AMDGPU=m
-CONFIG_DRM_VIRTIO_GPU=y              # QEMU -device virtio-vga
-CONFIG_DRM_VMWGFX=y                  # VirtualBox VMSVGA
-CONFIG_DRM_SIMPLEDRM=y
-CONFIG_FRAMEBUFFER_CONSOLE=y
-
-# --- Audio (ALSA para STT/TTS) -----------------------------------------------
-CONFIG_SOUND=y
-CONFIG_SND=y
-CONFIG_SND_HDA_INTEL=m
-CONFIG_SND_HDA_CODEC_REALTEK=m
-CONFIG_SND_HDA_CODEC_HDMI=m
-CONFIG_SND_USB_AUDIO=m               # micrófonos USB
-CONFIG_SND_INTEL8X0=m                # QEMU -device AC97
-
-# --- Entrada / USB -----------------------------------------------------------
-CONFIG_USB_XHCI_HCD=y
-CONFIG_USB_EHCI_HCD=y
-CONFIG_USB_HID=y
-CONFIG_HID_GENERIC=y
-CONFIG_INPUT_EVDEV=y
-
-# --- Virtualización (desarrollo en QEMU/KVM) ----------------------------------
-CONFIG_VIRTIO_PCI=y
-CONFIG_VIRTIO_CONSOLE=y
-CONFIG_HW_RANDOM_VIRTIO=y
-CONFIG_SERIAL_8250=y
-CONFIG_SERIAL_8250_CONSOLE=y
-
 # --- Seguridad --------------------------------------------------------------
 CONFIG_SECURITY=y
-CONFIG_SECURITY_APPARMOR=y           # perfiles para AgentD y llama-server
+CONFIG_SECURITY_APPARMOR=y
 CONFIG_DEFAULT_SECURITY_APPARMOR=y
 CONFIG_SECCOMP=y
 CONFIG_SECCOMP_FILTER=y
 
-# --- Arranque en portátil real: UEFI/BIOS, ISO, USB, initramfs ----------------
+# --- Requisitos del MEDIO DE ARRANQUE propio ---------------------------------
+# No es catálogo de hardware: AgentOS arranca de CD (ISO) y de USB con GRUB, en
+# BIOS y en UEFI, y debe poder leer su propia raíz. Si esto desaparece, el medio
+# de instalación deja de arrancar.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_RD_GZIP=y
 CONFIG_EFI=y
 CONFIG_EFI_STUB=y
 CONFIG_EFI_PARTITION=y
 CONFIG_MSDOS_PARTITION=y
 CONFIG_FB_EFI=y
-CONFIG_BLK_DEV_INITRD=y
-CONFIG_RD_GZIP=y
-CONFIG_DEVTMPFS=y
-CONFIG_DEVTMPFS_MOUNT=y
-CONFIG_BLK_DEV_SR=y                  # arranque desde DVD
+CONFIG_DRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_BLK_DEV_SR=y
 CONFIG_ISO9660_FS=y
 CONFIG_JOLIET=y
-CONFIG_USB_STORAGE=y                 # arranque desde USB
-CONFIG_USB_UAS=y
-CONFIG_MMC=y
-CONFIG_MMC_SDHCI=y
-CONFIG_MMC_SDHCI_PCI=y
-CONFIG_MMC_BLOCK=y
-CONFIG_NLS_CODEPAGE_437=y            # FAT de la partición EFI
+CONFIG_EXT4_FS=y
+CONFIG_VFAT_FS=y
+CONFIG_NLS_CODEPAGE_437=y
 CONFIG_NLS_ISO8859_1=y
 CONFIG_NLS_UTF8=y
-CONFIG_FW_LOADER=y
 CONFIG_MODULES=y
+CONFIG_FW_LOADER=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
 
-# --- WiFi y gráficos adicionales de portátil (módulos + linux-firmware) --------
-CONFIG_RTW88=m
-CONFIG_RTW88_8822CE=m
-CONFIG_RTW88_8821CE=m
-CONFIG_RTW89=m
-CONFIG_RTW89_8852AE=m
-CONFIG_MT7921E=m
-CONFIG_DRM_I915=m
-CONFIG_BACKLIGHT_CLASS_DEVICE=y
-CONFIG_ACPI_VIDEO=m
-CONFIG_INPUT_TOUCHSCREEN=y
-CONFIG_MOUSE_PS2=y
-CONFIG_KEYBOARD_ATKBD=y
-CONFIG_HID_MULTITOUCH=m
-CONFIG_I2C_HID_ACPI=m                # touchpads I2C
+# --- Entornos donde se PRUEBA AgentOS ---------------------------------------
+# No es hardware de usuario: son las máquinas virtuales donde se verifica el
+# sistema antes de tocar un portátil real. Si faltan, no hay forma de probarlo.
+CONFIG_DRM_VMWGFX=y
+CONFIG_DRM_VIRTIO_GPU=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_VIRTIO_NET=y
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_CONSOLE=y
+CONFIG_HW_RANDOM_VIRTIO=y
 
-# --- Desactivado (reduce tamaño) -----------------------------------------------
+# --- Poda deliberada por tamaño ---------------------------------------------
+# Solo se deja fuera lo que engorda la imagen sin aportar al producto.
+# NO desactivar aquí nada que el defconfig traiga por hardware (p. ej. BT o
+# STAGING): eso volvería a hacer el kernel rígido. Eso se deja al defconfig.
 # CONFIG_DEBUG_INFO is not set
-# CONFIG_BT is not set
-# CONFIG_ISDN is not set
-# CONFIG_INFINIBAND is not set
-# CONFIG_STAGING is not set
 # CONFIG_FTRACE is not set
+
+# --- Neutralizar lo que es de Ubuntu, no del kernel (rompe el build) ---------
+# Estas cuatro vienen heredadas de la config de Ubuntu y NO valen en nuestro
+# árbol. Verificado: sin esto, el build falla o el kernel engorda sin motivo.
+#   SYSTEM_TRUSTED_KEYS apunta a "debian/canonical-certs.pem", que no existe
+#   aquí -> el build aborta.
+CONFIG_SYSTEM_TRUSTED_KEYS=""
+CONFIG_SYSTEM_REVOCATION_KEYS=""
+#   MODULE_SIG es la firma de módulos de Ubuntu: no la necesitamos y complica
+#   el arranque.
+CONFIG_MODULE_SIG=n
+#   DEBUG_INFO = kernel enorme (cientos de MB) y compilación eterna.
+CONFIG_DEBUG_INFO=n
+

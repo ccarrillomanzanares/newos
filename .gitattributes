@@ -1,0 +1,35 @@
+# Finales de línea por tipo de fichero.
+#
+# El repo se edita en Windows y se compila en Linux. Sin esto, los scripts de
+# shell viajan con CRLF, el shebang queda como "#!/bin/sh\r" y el kernel no
+# encuentra el intérprete:
+#   /bin/sh^M: bad interpreter: No such file or directory
+# Eso rompió el build el 2026-10-04 (post-build.sh, S99agentos, agentos-gui).
+#
+# Regla: todo lo que se EJECUTA en Linux va en LF, siempre, en el repo y en el
+# checkout. Los ficheros de Windows pueden quedarse con CRLF.
+
+# Scripts de shell y todo lo ejecutable en el target
+*.sh            text eol=lf
+*.cfg           text eol=lf
+*.conf          text eol=lf
+*.mk            text eol=lf
+Makefile        text eol=lf
+*.desktop       text eol=lf
+
+# Scripts de arranque de BusyBox y binarios de shell del overlay
+build/overlays/etc/init.d/*   text eol=lf
+build/overlays/usr/bin/*      text eol=lf
+
+# Binario: no tocar
+*.png           binary
+*.jpg           binary
+*.pdf           binary
+*.iso           binary
+*.img           binary
+*.gz            binary
+*.xz            binary
+
+# buildroot/ es un arbol upstream clonado: NO se toca ni se renormaliza.
+# Sus parches y ficheros se dejan exactamente como vienen de upstream.
+buildroot/**    -text

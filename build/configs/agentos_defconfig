@@ -39,7 +39,9 @@ BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_AGENTOS_PATH)/board/agentos/post-im
 # --- Kernel (LTS 6.6.x más reciente de Buildroot 2024.02) -------------------
 BR2_LINUX_KERNEL=y
 BR2_LINUX_KERNEL_LATEST_VERSION=y
-BR2_LINUX_KERNEL_USE_DEFCONFIG=y
+# BR2_LINUX_KERNEL_USE_DEFCONFIG is not set
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_AGENTOS_PATH)/build/configs/kernel_base.config"
 BR2_LINUX_KERNEL_DEFCONFIG="x86_64"
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_AGENTOS_PATH)/build/configs/kernel_config"
 BR2_LINUX_KERNEL_INSTALL_TARGET=y
@@ -175,3 +177,9 @@ BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
 BR2_PACKAGE_HOST_QEMU=y
 BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE=y
+
+# --- zstd para kmod: los modulos del kernel salen .ko.zst y depmod/modprobe
+#     necesitan saber descomprimirlos. Sin esto modules.dep queda VACIO
+#     y la autocarga por modalias no funciona. (Target y host.)
+BR2_PACKAGE_ZSTD=y
+BR2_PACKAGE_HOST_KMOD_ZSTD=y
