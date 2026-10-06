@@ -314,7 +314,34 @@ $("form").onsubmit = e => {
 };
 
 /* Clic en el círculo: reservado para la voz (por ahora solo alterna el estado visual) */
-orb.onclick = () => { if (orb.classList.contains("offline")) return; listening = !listening; if (!busy) idle(); input.focus(); };
+/* El ORBE es el boton de VOZ: al tocarlo se abre el micro, hablas y el agente
+   contesta con voz (Gemini Live) y ademas deja el texto en el chat. Volver a
+   tocarlo cierra el micro. */
+let vozOn = false;
+orb.onclick = async () => {
+  if (orb.classList.contains("offline")) return;      /* sin agente, nada */
+  if (vozOn) { vozOn = false; AgentVoice.stop(); idle(); return; }
+  try {
+    const cfg = await jget("/voice/key");
+    if (!cfg || !cfg.key) { addTurn("agent", "No hay clave de voz configurada."); return; }
+    vozOn = true; current = null;
+    setState("listening");
+    AgentVoice.start({
+      key: cfg.key, model: cfg.model, voice: cfg.voice,
+      instruction: "Eres AgentD, el administrador autonomo de AgentOS. Hablas por voz. "
+        + "Responde SIEMPRE en el idioma en el que te hable el usuario y se breve, "
+        + "natural y calido. No uses markdown.",
+      onState: (st) => {
+        if (st === "idle" && vozOn) { vozOn = false; idle(); }
+        else if (st === "error") { vozOn = false; setState("error"); }
+      },
+      onText: (txt, fin) => {
+        if (fin) { current = null; }
+        else if (txt) { setState("thinking"); agentTurn().textContent += txt; scrollLog(); }
+      },
+    });
+  } catch (e) { vozOn = false; setState("error"); addTurn("agent", "No se pudo abrir el microfono: " + e); }
+};
 document.addEventListener("click", e => {
   // NO robar el foco si hay un panel abierto (contrasena / red / proveedor) ni
   // si el clic es en un input/boton: al pulsar una red, este manejador devolvia
@@ -326,9 +353,6 @@ document.addEventListener("click", e => {
   if (!viewer.contains(t) && !window.getSelection().toString()) input.focus();
 });
 
-connect();
-boot();
-setInterval(() => { if (!busy) boot(); }, 15000);
 
 
 /* ---------- teclado en pantalla propio ---------- */
@@ -577,6 +601,108 @@ async function panelVoice() {
   };
 }
 
+
+/* ================= VOZ: cliente de la Live API de Gemini =================
+   El modelo oye y habla por si mismo (speech-to-speech). El micro se envia en
+   PCM 16 kHz y la respuesta vuelve en PCM 24 kHz; el texto que dice se saca de
+   outputTranscription para mostrarlo en el chat. */
+const AgentVoice = (function () {
+  const WS_URL = "wss://generativelanguage.googleapis.com/ws/"
+    + "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+  const IN_RATE = 16000, OUT_RATE = 24000;
+  let ws = null, stream = null, inCtx = null, outCtx = null, proc = null, src = null;
+  let on = false, hook = {}, cola = [];
+
+  function b64(buf) {
+    const b = new Uint8Array(buf); let s = "";
+    for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s);
+  }
+  function unb64(t) {
+    const bin = atob(t), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function aFloat(i16) { const f = new Float32Array(i16.length); for (let i = 0; i < i16.length; i++) f[i] = i16[i] / 32768; return f; }
+
+  async function start(opts) {
+    if (on) return;
+    hook = opts || {};
+    on = true;
+    ws = new WebSocket(WS_URL + "?key=" + encodeURIComponent(opts.key));
+    ws.onopen = () => ws.send(JSON.stringify({ setup: {
+      model: "models/" + (opts.model || "gemini-3.1-flash-live-preview"),
+      generationConfig: { responseModalities: ["AUDIO"], speechConfig: {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: opts.voice || "Leda" } } } },
+      systemInstruction: { parts: [{ text: opts.instruction || "" }] },
+    } }));
+    ws.onmessage = async (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.setupComplete) { try { await abrirMicro(opts); } catch (e) { stop("error"); } return; }
+      const sc = m.serverContent || {};
+      if (sc.interrupted) { pararAudio(); }
+      for (const pt of ((sc.modelTurn || {}).parts || []))
+        if (pt.inlineData && pt.inlineData.data) suena(unb64(pt.inlineData.data));
+      const tr = (sc.outputTranscription || {}).text;
+      if (tr && hook.onText) hook.onText(tr, false);
+      if (sc.turnComplete && hook.onText) hook.onText("", true);
+    };
+    ws.onerror = () => stop("error");
+    ws.onclose = () => stop("idle");
+  }
+
+  async function abrirMicro(opts) {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+    const AC = window.AudioContext || window.webkitAudioContext;
+    inCtx = new AC({ sampleRate: IN_RATE });
+    src = inCtx.createMediaStreamSource(stream);
+    proc = inCtx.createScriptProcessor(2048, 1, 1);
+    const mute = inCtx.createGain(); mute.gain.value = 0;   /* no devolver el micro al altavoz */
+    proc.onaudioprocess = (e) => {
+      if (!on || !ws || ws.readyState !== 1) return;
+      const f = e.inputBuffer.getChannelData(0);
+      const i16 = new Int16Array(f.length);
+      for (let i = 0; i < f.length; i++) { const v = Math.max(-1, Math.min(1, f[i])); i16[i] = v < 0 ? v * 32768 : v * 32767; }
+      ws.send(JSON.stringify({ realtimeInput: { audio: { data: b64(i16.buffer), mimeType: "audio/pcm;rate=" + IN_RATE } } }));
+    };
+    src.connect(proc); proc.connect(mute); mute.connect(inCtx.destination);
+    if (hook.onState) hook.onState("listening");
+  }
+
+  function suena(bytes) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!outCtx) outCtx = new AC({ sampleRate: OUT_RATE });
+    const i16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+    const buf = outCtx.createBuffer(1, i16.length, OUT_RATE);
+    buf.getChannelData(0).set(aFloat(i16));
+    const s = outCtx.createBufferSource(); s.buffer = buf; s.connect(outCtx.destination); s.start();
+    cola.push(s);
+  }
+  function pararAudio() { cola.forEach(s => { try { s.stop(); } catch (e) {} }); cola = []; }
+
+  function stop(cual) {
+    on = false;
+    try { if (proc) proc.disconnect(); } catch (e) {}
+    try { if (src) src.disconnect(); } catch (e) {}
+    try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { if (inCtx) inCtx.close(); } catch (e) {}
+    pararAudio();
+    try { if (ws && ws.readyState <= 1) ws.close(); } catch (e) {}
+    ws = null; inCtx = null; stream = null; proc = null; src = null; outCtx = null;
+    if (hook.onState) hook.onState(cual === "error" ? "error" : "idle");
+  }
+
+  return { start: start, stop: function () { stop("idle"); }, get activo() { return on; } };
+})();
+
+
+/* Arranque de la interfaz: AL FINAL del script, cuando ya esta TODO
+   declarado. Antes se llamaba arriba y boot() usaba "panel" antes de su
+   const (zona muerta temporal): el primer intento fallaba como promesa
+   rechazada y habia que esperar 15 s al reintento del setInterval. */
+connect();
+boot();
+setInterval(() => { if (!busy) boot(); }, 15000);
 </script>
 </body>
 </html>

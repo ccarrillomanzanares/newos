@@ -203,6 +203,20 @@ VOICES = [
 ]
 
 
+def voice_config():
+    """Clave/modelo/voz de la Live API (la necesita el navegador para el WebSocket)."""
+    cfg = {}
+    if LLM_CONF.is_file():
+        for line in LLM_CONF.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip().strip("'\"")
+    return {"key": cfg.get("AGENTOS_GEMINI_API_KEY", ""),
+            "model": cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview"),
+            "voice": cfg.get("AGENTOS_LIVE_VOICE", "Leda")}
+
+
 def set_voice(voz):
     """Guarda la voz elegida (y marca que ya se eligio, para no preguntar mas)."""
     if not voz or len(voz) > 24 or not voz.isalnum():
@@ -305,6 +319,8 @@ def http_response(path: str):
             except Exception:
                 pass
         return _json({"ok": ok, "msg": msg})
+    if url.path == "/voice/key":
+        return _json(voice_config())
     if url.path == "/voice/list":
         return _json({"voices": [{"name": n, "gender": g, "style": e} for n, g, e in VOICES],
                       "current": llm_status().get("voice", "")})
