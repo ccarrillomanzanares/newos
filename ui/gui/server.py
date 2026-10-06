@@ -22,6 +22,7 @@ import logging
 import mimetypes
 import os
 import subprocess
+import sys
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -139,6 +140,9 @@ def llm_status():
             "model": cfg.get("AGENTOS_OPENAI_MODEL", ""),
             "base_url": cfg.get("AGENTOS_OPENAI_BASE_URL", ""),
             "lang": cfg.get("AGENTOS_LANG", ""),
+            "voice": cfg.get("AGENTOS_LIVE_VOICE", ""),
+            "live_model": cfg.get("AGENTOS_LIVE_MODEL", ""),
+            "voice_chosen": bool(cfg.get("AGENTOS_VOICE_CHOSEN")),
             "configured": bool(cfg.get("AGENTOS_OPENAI_API_KEY"))}
 
 
@@ -176,6 +180,56 @@ def set_lang(code):
     except Exception:
         pass
     return True
+
+
+# --- Voces de Gemini Live (30 predefinidas; genero y caracter oficiales) ----
+VOICES = [
+    ("Kore", "Female", "Firm"), ("Aoede", "Female", "Breezy"),
+    ("Autonoe", "Female", "Bright"), ("Callirrhoe", "Female", "Easy-going"),
+    ("Despina", "Female", "Smooth"), ("Erinome", "Female", "Clear"),
+    ("Gacrux", "Female", "Mature"), ("Laomedeia", "Female", "Upbeat"),
+    ("Leda", "Female", "Youthful"), ("Pulcherrima", "Female", "Forward"),
+    ("Achernar", "Female", "Soft"),
+    ("Puck", "Male", "Upbeat"), ("Charon", "Male", "Informative"),
+    ("Fenrir", "Male", "Excitable"), ("Orus", "Male", "Firm"),
+    ("Iapetus", "Male", "Clear"), ("Algenib", "Male", "Gravelly"),
+    ("Algieba", "Male", "Smooth"), ("Alnilam", "Male", "Firm"),
+    ("Achird", "Male", "Friendly"), ("Enceladus", "Male", "Breathy"),
+    ("Rasalgethi", "Male", "Informative"), ("Sadachbia", "Male", "Lively"),
+    ("Sadaltager", "Male", "Knowledgeable"), ("Schedar", "Male", "Even"),
+    ("Umbriel", "Male", "Relaxed"), ("Zubenelgenubi", "Male", "Casual"),
+    ("Sulafat", "Male", "Warm"), ("Vindemiatrix", "Male", "Gentle"),
+    ("Zephyr", "Neutral", "Bright"),
+]
+
+
+def set_voice(voz):
+    """Guarda la voz elegida (y marca que ya se eligio, para no preguntar mas)."""
+    if not voz or len(voz) > 24 or not voz.isalnum():
+        return False
+    keep = []
+    if LLM_CONF.is_file():
+        keep = [l for l in LLM_CONF.read_text(encoding="utf-8", errors="replace").splitlines()
+                if not l.startswith(("AGENTOS_LIVE_VOICE=", "AGENTOS_VOICE_CHOSEN="))]
+    keep += ["AGENTOS_LIVE_VOICE='%s'" % voz, "AGENTOS_VOICE_CHOSEN=1"]
+    LLM_CONF.write_text("\n".join(keep) + "\n", encoding="utf-8")
+    return True
+
+
+def voice_preview(voz):
+    """Genera una muestra de esa voz y la reproduce (en segundo plano, sin bloquear)."""
+    if not voz or len(voz) > 24:
+        return False
+    frase = "Hola, soy AgentD. Asi suena mi voz."
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "ui.voice.gemini_live", "--test", frase,
+             "--voice", voz, "--out", "/tmp/voice_preview.wav"],
+            cwd="/opt/agentos",
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        return False
 
 
 def llm_set(backend, key, model, base_url, lang=""):
@@ -251,6 +305,15 @@ def http_response(path: str):
             except Exception:
                 pass
         return _json({"ok": ok, "msg": msg})
+    if url.path == "/voice/list":
+        return _json({"voices": [{"name": n, "gender": g, "style": e} for n, g, e in VOICES],
+                      "current": llm_status().get("voice", "")})
+    if url.path == "/voice/set":
+        voz = (parse_qs(url.query).get("voice") or [""])[0]
+        return _json({"ok": set_voice(voz), "voice": voz})
+    if url.path == "/voice/preview":
+        voz = (parse_qs(url.query).get("voice") or [""])[0]
+        return _json({"ok": voice_preview(voz), "voice": voz})
     if url.path == "/llm/status":
         return _json(llm_status())
     if url.path == "/llm/set":

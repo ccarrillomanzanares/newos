@@ -433,6 +433,7 @@ async function boot() {
   const net = await jget("/net/status");
   if (!net.connected) return panelNet();      /* 2) red */
   if (!st.configured) return panelLLM();      /* 3) proveedor + clave */
+  if (!st.voice_chosen) return panelVoice();  /* 4) voz del agente */
   hidePanel();
 }
 
@@ -536,6 +537,44 @@ async function panelLLM() {
     hidePanel();
   };
   $("skip").onclick = hidePanel;
+}
+
+
+/* ---------- panel de VOZ: elegir la voz del agente (con muestra) ---------- */
+let vozActual = "";
+async function panelVoice() {
+  const r = await jget("/voice/list");
+  const voces = r.voices || [];
+  vozActual = r.current || "Kore";
+  let html = "<h2>Voice</h2>" +
+    "<div class='sub'>Choose how the agent sounds. Tap a voice to hear a sample." +
+    (vozActual ? " Current: <b>" + esc(vozActual) + "</b>." : "") + "</div>";
+  if (!voces.length) { html += "<div class='msg'>No voices available.</div>"; showPanel(html); return; }
+  html += "<ul class='netlist' id='vl'></ul>" +
+    "<button class='btn' id='ok'>Continue</button>" +
+    "<div class='msg' id='m'></div>";
+  showPanel(html);
+  const vl = $("vl");
+  voces.forEach(v => {
+    const li = document.createElement("li");
+    li.innerHTML = "<span class='n'></span><span class='sec'></span>";
+    li.querySelector(".n").textContent = v.name;
+    li.querySelector(".sec").textContent = v.gender + " \u00B7 " + v.style;
+    if (v.name === vozActual) li.classList.add("sel-k");
+    li.onclick = async () => {
+      vozActual = v.name;
+      $("m").textContent = "Playing " + v.name + "\u2026";
+      await jget("/voice/preview?voice=" + encodeURIComponent(v.name));
+      $("m").textContent = v.name + " selected. Tap Continue, or try another.";
+    };
+    vl.appendChild(li);
+  });
+  $("ok").onclick = async () => {
+    $("m").textContent = "Saving\u2026";
+    await jget("/voice/set?voice=" + encodeURIComponent(vozActual));
+    $("m").textContent = "Voice saved.";
+    setTimeout(hidePanel, 700);
+  };
 }
 
 </script>
