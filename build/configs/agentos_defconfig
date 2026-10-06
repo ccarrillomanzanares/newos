@@ -166,10 +166,10 @@ BR2_TARGET_ROOTFS_EXT2_SIZE="2048M"
 # BR2_TARGET_ROOTFS_TAR is not set
 BR2_TARGET_ROOTFS_CPIO=y
 BR2_TARGET_ROOTFS_CPIO_GZIP=y
-BR2_TARGET_ROOTFS_ISO9660=y
-BR2_TARGET_ROOTFS_ISO9660_GRUB2=y
-BR2_TARGET_ROOTFS_ISO9660_BOOT_MENU="$(BR2_EXTERNAL_AGENTOS_PATH)/board/agentos/grub-iso.cfg"
-BR2_TARGET_ROOTFS_ISO9660_INITRD=y
+# El ISO lo genera post-image.sh con grub-mkrescue: imagen HIBRIDA que arranca
+# en BIOS y UEFI desde CD, USB y disco virtual. El ISO9660 de Buildroot es de
+# El Torito y NO arranca desde USB en BIOS (carece de MBR/particion).
+# BR2_TARGET_ROOTFS_ISO9660 is not set
 
 # --- Herramientas de host para post-image ------------------------------------
 BR2_PACKAGE_HOST_GENIMAGE=y

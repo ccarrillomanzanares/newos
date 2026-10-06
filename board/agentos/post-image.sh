@@ -29,10 +29,21 @@ cp "$ESP/boot/grub/grub.cfg" "$ESP/EFI/BOOT/grub.cfg"
 
 support/scripts/genimage.sh -c "$ROOT_DIR/build/genimage.cfg"
 
-if [ -f "$BINARIES_DIR/rootfs.iso9660" ]; then
-    ln -sf rootfs.iso9660 "$BINARIES_DIR/agentos.iso"
-fi
-
+# --- ISO HIBRIDA (BIOS + UEFI) con grub-mkrescue ------------------------------
+# Un solo artefacto: live en RAM y medio de instalacion. Arranca de USB y de CD,
+# en BIOS y en UEFI. Se usa el grub-mkrescue del SISTEMA (embebe El Torito + MBR
+# hibrido); el de Buildroot genera solo MBR y NO arranca como CD (VirtualBox).
+ISO_TREE="$(mktemp -d)"
+mkdir -p "$ISO_TREE/boot/grub"
+# xorriso no acepta un symlink como destino (Buildroot deja agentos.iso -> rootfs.iso9660).
+rm -f "$BINARIES_DIR/agentos.iso"
+cp "$BINARIES_DIR/bzImage" "$ISO_TREE/boot/bzImage"
+cp "$BINARIES_DIR/rootfs.cpio.gz" "$ISO_TREE/boot/initrd"
+sed -e "s|__KERNEL_PATH__|/boot/bzImage|g" -e "s|__INITRD_PATH__|/boot/initrd|g" "$BOARD_DIR/grub-iso.cfg" > "$ISO_TREE/boot/grub/grub.cfg"
+GRUB_MKRESCUE=/usr/bin/grub-mkrescue
+[ -x "$GRUB_MKRESCUE" ] || GRUB_MKRESCUE=grub-mkrescue
+PATH=/usr/bin:/bin:/usr/sbin:/sbin "$GRUB_MKRESCUE" -o "$BINARIES_DIR/agentos.iso" "$ISO_TREE" -- -volid AGENTOS || echo "AVISO: no se pudo generar agentos.iso"
+rm -rf "$ISO_TREE"
 echo ""
 echo "=== AgentOS: imágenes generadas en $BINARIES_DIR ==="
 echo "  agentos.img  -> USB:  sudo dd if=agentos.img of=/dev/sdX bs=4M status=progress conv=fsync"
