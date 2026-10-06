@@ -117,6 +117,10 @@
   #kbd .key.w2 { flex:2 1 0; max-width:120px; }
   #kbd .key.w3 { flex:5 1 0; max-width:none; }
 
+  .sel-k { outline:1px solid var(--accent); outline-offset:2px; background:#111; }
+  li.sel-k .n { color:var(--accent); }
+  .btn.sel-k, .skip.sel-k { border-color:var(--accent); color:var(--accent); }
+
   /* Visor */
   #viewer { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none;
     align-items:center; justify-content:center; padding:5vh 5vw; cursor:zoom-out; z-index:10; }
@@ -136,7 +140,7 @@
     <div class="dots"><i></i><i></i><i></i></div>
   </div>
   <div id="log" aria-live="polite"></div>
-  <div id="think"><span class="d"></span><span class="d"></span><span class="d"></span><span class="txt">el agente está trabajando…</span></div>
+  <div id="think"><span class="d"></span><span class="d"></span><span class="d"></span><span class="txt">working…</span></div>
   <form id="form" autocomplete="off"><input id="input" placeholder="..." spellcheck="false" autofocus></form>
 </main>
 <div id="viewer"></div>
@@ -152,7 +156,7 @@ let ws = null, current = null, busy = false, listening = false, shownOffline = f
 const tools = new Map();                   // id → elemento "⚙ nombre..."
 
 function setState(s) { orb.className = s; }
-function thinkOn(txt) { const t = document.getElementById('think'); if (t) { t.querySelector('.txt').textContent = txt || 'el agente está trabajando…'; t.classList.add('on'); scrollLog(); } }
+function thinkOn(txt) { const t = document.getElementById('think'); if (t) { t.querySelector('.txt').textContent = txt || 'working…'; t.classList.add('on'); scrollLog(); } }
 function thinkOff() { const t = document.getElementById('think'); if (t) t.classList.remove('on'); }
 function scrollLog() { const l = document.getElementById('log'); if (l) l.scrollTop = l.scrollHeight; }
 function idle() { setState(listening ? "listening" : ""); }
@@ -236,7 +240,7 @@ function connect() {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     switch (m.type) {
       case "ready": orb.title = m.llm || ""; shownOffline = false; idle(); break;
-      case "token": setState("thinking"); agentTurn().textContent += m.text; thinkOn("escribiendo…"); scrollLog(); break;
+      case "token": setState("thinking"); agentTurn().textContent += m.text; thinkOn("writing…"); scrollLog(); break;
       case "tool": {
         setState("thinking");
         if (m.status === "running") {
@@ -388,9 +392,35 @@ function mountKbd(input) {
   draw();
 }
 
+
+/* ---------- navegacion con cursores (flechas) en los paneles ---------- */
+let panelItems = [], panelIdx = -1;
+function panelCollect() {
+  const c = $("card"); if (!c) return;
+  panelItems = [...c.querySelectorAll("li, button.btn, button.skip")];
+  panelIdx = panelItems.findIndex(x => x.tagName === "LI");
+  if (panelIdx < 0 && panelItems.length) panelIdx = 0;
+  panelHighlight();
+}
+function panelHighlight() { panelItems.forEach((el, i) => el.classList.toggle("sel-k", i === panelIdx)); }
+document.addEventListener("keydown", e => {
+  /* OJO: resolver los elementos AQUI, no en una constante: este bloque se define
+     antes de "const panel = ..." (zona muerta temporal) y al pulsar una tecla se
+     lanzaba ReferenceError: panel is not defined. Navegacion con flechas:
+     Arriba/Abajo mover la seleccion, Enter activar. */
+  const pnl = document.getElementById("panel");
+  if (!pnl || !pnl.classList.contains("open")) return;
+  if (e.key === "Enter") { if (panelIdx >= 0 && panelItems[panelIdx]) { e.preventDefault(); panelItems[panelIdx].click(); } return; }
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  if (!panelItems.length) return;
+  e.preventDefault();
+  panelIdx = (panelIdx + (e.key === "ArrowDown" ? 1 : -1) + panelItems.length) % panelItems.length;
+  panelHighlight();
+});
+
 /* ---------- paneles de arranque (red / proveedor) ---------- */
 const panel = $("panel"), card = $("card");
-function showPanel(h) { card.innerHTML = h; panel.classList.add("open"); }
+function showPanel(h) { card.innerHTML = h; panel.classList.add("open"); setTimeout(panelCollect, 0); }
 function hidePanel() { panel.classList.remove("open"); card.innerHTML = ""; }
 
 async function jget(u) { try { return await (await fetch(u)).json(); } catch { return {}; } }
@@ -408,8 +438,8 @@ async function boot() {
 
 async function panelLang() {
   const st = await jget("/llm/status");
-  let html = "<h2>Idioma del teclado</h2>" +
-    "<div class='sub'>Elígelo una vez. Se usa para el teclado físico y para el de pantalla.</div>" +
+  let html = "<h2>Keyboard language</h2>" +
+    "<div class='sub'>Choose once. Used for the physical and the on-screen keyboard.</div>" +
     "<ul class='netlist' id='lg'></ul>";
   showPanel(html);
   const ul = $("lg");
@@ -433,10 +463,10 @@ function esc(t) { return (t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<":
 async function panelNet() {
   const r = await jget("/net/list");
   const nets = r.networks || [];
-  let html = "<h2>Conectar a una red</h2>" +
-    "<div class='sub'>No hay internet. Sin red el agente no puede responder.</div>";
+  let html = "<h2>Connect to a network</h2>" +
+    "<div class='sub'>No internet. Without a network the agent cannot answer.</div>";
   if (!nets.length) {
-    html += "<div class='msg'>No se ven redes. ¿Está el WiFi activado?</div>";
+    html += "<div class='msg'>No networks found. Is Wi-Fi enabled?</div>";
     showPanel(html);
     return;
   }
@@ -456,39 +486,39 @@ async function panelNet() {
 function netPassword(n) {
   const abierta = (n.security === "abierta" || !n.security);
   showPanel(
-    "<h2>" + (abierta ? "Conectar a " : "Contrase\u00f1a de ") +
+    "<h2>" + (abierta ? "Connect to " : "Password for ") +
       "<span class='ssid'>" + esc(n.ssid) + "</span></h2>" +
-    "<div class='sub'>" + (abierta ? "Red abierta." : "Escribe la contrase\u00f1a del WiFi.") + "</div>" +
-    (abierta ? "" : "<div class='field'><input id='pw' type='text' placeholder='Contrase\u00f1a' autocomplete='off' spellcheck='false'></div>" +
+    "<div class='sub'>" + (abierta ? "Open network." : "Type the Wi-Fi password.") + "</div>" +
+    (abierta ? "" : "<div class='field'><input id='pw' type='text' placeholder='Password' autocomplete='off' spellcheck='false'></div>" +
                     "<div id='kbd'></div>") +
-    "<button class='btn' id='ok'>Conectar</button>" +
-    "<button class='skip' id='back'>\u2190 Elegir otra red</button>" +
+    "<button class='btn' id='ok'>Connect</button>" +
+    "<button class='skip' id='back'>← Choose another network</button>" +
     "<div class='msg' id='m'></div>");
   const pwf = $("pw");
   if (pwf) { mountKbd(pwf); pwf.focus(); }
   $("ok").onclick = async () => {
-    $("m").textContent = "Conectando a " + n.ssid + "\u2026";
+    $("m").textContent = "Connecting to " + n.ssid + "\u2026";
     $("ok").disabled = true;
     const q = "/net/connect?ssid=" + encodeURIComponent(n.ssid) +
               "&password=" + encodeURIComponent(pwf ? pwf.value : "");
     const res = await jget(q);
-    if (res.ok) { $("m").textContent = "Conectado."; setTimeout(hidePanel, 900); }
-    else { $("m").textContent = "No se pudo conectar. " + esc(res.msg || ""); $("ok").disabled = false; }
+    if (res.ok) { $("m").textContent = "Connected."; setTimeout(hidePanel, 900); }
+    else { $("m").textContent = "Could not connect. " + esc(res.msg || ""); $("ok").disabled = false; }
   };
   $("back").onclick = () => panelNet();
 }
 
 async function panelLLM() {
   const st = await jget("/llm/status");
-  let html = "<h2>Conectar con el modelo</h2>" +
-    "<div class='sub'>Pega tu clave de API. Si no la tienes, abre la web del proveedor y cópiala.</div>" +
-    "<div class='field'><input id='k' type='text' placeholder='Clave API (pégala)' autocomplete='off' spellcheck='false'></div>" +
+  let html = "<h2>Connect to the model</h2>" +
+    "<div class='sub'>Paste your API key. If you do not have one, open the provider site and copy it.</div>" +
+    "<div class='field'><input id='k' type='text' placeholder='API key (paste it)' autocomplete='off' spellcheck='false'></div>" +
     "<div id='kbd'></div>" +
-    "<button class='btn' id='openweb'>Abrir la web del proveedor</button>" +
+    "<button class='btn' id='openweb'>Open provider website</button>" +
     "<div class='field'><input id='u' value='" + (st.base_url || "https://ollama.com/v1") + "'></div>" +
     "<div class='field'><input id='mo' value='" + (st.model || "deepseek-v4.1-flash:cloud") + "'></div>" +
-    "<button class='btn' id='ok'>Guardar y empezar</button>" +
-    "<button class='skip' id='skip'>Configurar más tarde</button><div class='msg' id='m'></div>";
+    "<button class='btn' id='ok'>Save and start</button>" +
+    "<button class='skip' id='skip'>Configure later</button><div class='msg' id='m'></div>";
   showPanel(html);
   const kf = $("k");
   if (kf) { mountKbd(kf); kf.focus(); }
@@ -499,7 +529,7 @@ async function panelLLM() {
     window.open(url, "_blank");     /* el agente/navegador la abre; luego se pega aquí */
   };
   $("ok").onclick = async () => {
-    $("m").textContent = "Guardando…";
+    $("m").textContent = "Saving…";
     await jget("/llm/set?backend=openai&key=" + encodeURIComponent($("k").value) +
                "&model=" + encodeURIComponent($("mo").value) +
                "&base_url=" + encodeURIComponent($("u").value));

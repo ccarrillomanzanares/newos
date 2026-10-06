@@ -168,9 +168,11 @@ def set_lang(code):
         else:
             txt += "\n[keyboard]\nkeymap_layout=%s\n" % code
         WESTON_INI.write_text(txt, encoding="utf-8")
-        # Reiniciar Weston para que el teclado FISICO cambie de distribucion.
-        # La interfaz la relanza sola el supervisor agentos-gui.
-        subprocess.Popen(["/etc/init.d/S71weston", "restart"])
+        # NO se reinicia Weston aqui: reiniciarlo MATA la sesion grafica (se cae al
+        # tty con las frases de arranque), que es justo lo que pasaba al elegir
+        # idioma. El cambio de layout del teclado FISICO se aplica solo en el
+        # siguiente arranque (Weston lee keymap_layout al iniciarse). El teclado
+        # de PANTALLA cambia al momento (lo hace la UI, no Weston).
     except Exception:
         pass
     return True
