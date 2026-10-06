@@ -21,6 +21,7 @@ import json
 import logging
 import mimetypes
 import os
+import subprocess
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -41,6 +42,163 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Tipos que el visor puede mostrar vía /file?path=... (solo se escucha en 127.0.0.1)
 VIEWABLE = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".pdf", ".txt", ".md", ".log",
             ".json", ".py", ".sh", ".csv", ".html"}
+
+# --------------------------------------------------------------------------
+# Red / WiFi (nmcli) y configuracion del proveedor LLM
+# El servidor corre como root (lo lanza S99agentos), asi que puede ejecutar
+# nmcli y escribir /etc/default/agentos.
+# --------------------------------------------------------------------------
+LLM_CONF = Path("/etc/default/agentos")
+
+
+def _run(args, timeout=30):
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, (p.stdout or ""), (p.stderr or "")
+    except Exception as exc:                      # nmcli ausente, timeout...
+        return 1, "", str(exc)
+
+
+def _json(obj, status=HTTPStatus.OK):
+    return _response(status, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
+                     "application/json; charset=utf-8")
+
+
+def _tcp_ok(host, port=443, timeout=3.0):
+    import socket as _s
+    try:
+        with _s.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def has_internet():
+    """Comprueba INTERNET de verdad, no el estado de NetworkManager: este dice
+    "connected (local only)" o cuenta una eth0 sin salida como conectada. Se
+    prueba una conexion TCP al endpoint del LLM y a 1.1.1.1."""
+    st = llm_status()
+    host = "1.1.1.1"
+    base = st.get("base_url") or ""
+    if "//" in base:
+        host = base.split("//", 1)[1].split("/", 1)[0].split(":", 1)[0] or host
+    return _tcp_ok(host) or _tcp_ok("1.1.1.1")
+
+
+def net_connected():
+    """(hay_internet, ssid). El panel de red se muestra si NO hay internet."""
+    if has_internet():
+        ssid = ""
+        rc, out, _ = _run(["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"])
+        for line in out.splitlines():
+            if line.startswith(("yes:", "*:")):
+                ssid = line.split(":", 1)[1].strip()
+        return True, ssid
+    return False, ""
+
+
+def net_list():
+    """Redes WiFi visibles, de mayor a menor senal."""
+    rc, out, _ = _run(["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY",
+                       "device", "wifi", "list", "--rescan", "yes"], timeout=40)
+    seen = {}
+    for line in out.splitlines():
+        parts = line.split(":")
+        if len(parts) < 4 or not parts[1]:
+            continue
+        ssid = parts[1]
+        if ssid in seen:
+            continue
+        try:
+            sig = int(parts[2])
+        except ValueError:
+            sig = 0
+        seen[ssid] = {"ssid": ssid, "signal": sig,
+                      "security": ":".join(parts[3:]) or "abierta",
+                      "active": parts[0] in ("yes", "*")}
+    return sorted(seen.values(), key=lambda n: -n["signal"])
+
+
+def net_connect(ssid, password):
+    args = ["nmcli", "--wait", "45", "device", "wifi", "connect", ssid]
+    if password:
+        args += ["password", password]
+    rc, out, err = _run(args, timeout=60)
+    return rc == 0, (out + err).strip()
+
+
+def llm_status():
+    cfg = {}
+    if LLM_CONF.is_file():
+        for line in LLM_CONF.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip().strip("'\"")
+    return {"backend": cfg.get("AGENTOS_LLM_BACKEND", ""),
+            "model": cfg.get("AGENTOS_OPENAI_MODEL", ""),
+            "base_url": cfg.get("AGENTOS_OPENAI_BASE_URL", ""),
+            "lang": cfg.get("AGENTOS_LANG", ""),
+            "configured": bool(cfg.get("AGENTOS_OPENAI_API_KEY"))}
+
+
+WESTON_INI = Path("/etc/xdg/weston/weston.ini")
+
+
+def set_lang(code):
+    """Guarda el idioma y lo aplica: (a) al teclado de pantalla lo hace la UI,
+    (b) al teclado FISICO hay que reescribir weston.ini y reiniciar Weston
+    (Weston lee keymap_layout solo al arrancar)."""
+    if not code or len(code) > 8:
+        return False
+    # /etc/default/agentos: AGENTOS_LANG=xx
+    if LLM_CONF.is_file():
+        keep = [l for l in LLM_CONF.read_text(encoding="utf-8", errors="replace").splitlines()
+                if not l.startswith("AGENTOS_LANG=")]
+    else:
+        keep = []
+    keep.append("AGENTOS_LANG=%s" % code)
+    LLM_CONF.write_text("\n".join(keep) + "\n", encoding="utf-8")
+    # weston.ini: [keyboard] keymap_layout
+    try:
+        txt = WESTON_INI.read_text(encoding="utf-8")
+        if "keymap_layout=" in txt:
+            import re as _re
+            txt = _re.sub(r"keymap_layout=\S*", "keymap_layout=" + code, txt)
+        else:
+            txt += "\n[keyboard]\nkeymap_layout=%s\n" % code
+        WESTON_INI.write_text(txt, encoding="utf-8")
+        # Reiniciar Weston para que el teclado FISICO cambie de distribucion.
+        # La interfaz la relanza sola el supervisor agentos-gui.
+        subprocess.Popen(["/etc/init.d/S71weston", "restart"])
+    except Exception:
+        pass
+    return True
+
+
+def llm_set(backend, key, model, base_url, lang=""):
+    """Escribe la config del proveedor y reinicia AgentD para que la use."""
+    lines = []
+    if LLM_CONF.is_file():
+        keep = [l for l in LLM_CONF.read_text(encoding="utf-8", errors="replace").splitlines()
+                if not l.startswith(("AGENTOS_LLM_BACKEND=", "AGENTOS_OPENAI_API_KEY=",
+                                     "AGENTOS_OPENAI_MODEL=", "AGENTOS_OPENAI_BASE_URL="))]
+        lines = keep
+    if lang:
+        lines += ["AGENTOS_LANG=%s" % lang]
+    lines += ["AGENTOS_LLM_BACKEND=%s" % (backend or "openai"),
+              "AGENTOS_OPENAI_BASE_URL=%s" % (base_url or ""),
+              "AGENTOS_OPENAI_API_KEY='%s'" % key,
+              "AGENTOS_OPENAI_MODEL='%s'" % (model or "")]
+    LLM_CONF.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        subprocess.Popen(["/etc/init.d/S99agentos", "restart"])
+    except Exception:
+        pass
+    return True
+
+
+
 
 
 def default_socket() -> Path:
@@ -74,6 +232,38 @@ def http_response(path: str):
     url = urlsplit(path)
     if url.path == "/ws":
         return None
+    if url.path == "/net/status":
+        ok, ssid = net_connected()
+        return _json({"connected": ok, "ssid": ssid})
+    if url.path == "/net/list":
+        return _json({"networks": net_list()})
+    if url.path == "/net/connect":
+        ssid = (parse_qs(url.query).get("ssid") or [""])[0]
+        pw = (parse_qs(url.query).get("password") or [""])[0]
+        if not ssid:
+            return _json({"ok": False, "msg": "falta la red"}, HTTPStatus.BAD_REQUEST)
+        ok, msg = net_connect(ssid, pw)
+        if ok:      # ya hay red: relanzar AgentD
+            try:
+                subprocess.Popen(["/etc/init.d/S99agentos", "restart"])
+            except Exception:
+                pass
+        return _json({"ok": ok, "msg": msg})
+    if url.path == "/llm/status":
+        return _json(llm_status())
+    if url.path == "/llm/set":
+        q = parse_qs(url.query)
+        lang = (q.get("lang") or [""])[0]
+        if lang:
+            set_lang(lang)
+        if (q.get("key") or [""])[0] or (q.get("model") or [""])[0]:
+            llm_set((q.get("backend") or [""])[0], (q.get("key") or [""])[0],
+                    (q.get("model") or [""])[0], (q.get("base_url") or [""])[0], lang)
+        return _json({"ok": True})
+    if url.path == "/sys/plain":
+        # Info del sistema SIN HTML/markdown, lista para copiar y pegar.
+        rc, out, _ = _run(["sh", "-c", "uname -a; echo; free -h; echo; df -h; echo; ip -br addr"], timeout=20)
+        return _response(HTTPStatus.OK, out.encode("utf-8"), "text/plain; charset=utf-8")
     if url.path == "/file":
         raw = (parse_qs(url.query).get("path") or [""])[0]
         path = Path(raw).expanduser()

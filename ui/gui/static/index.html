@@ -9,7 +9,7 @@
   * { box-sizing:border-box; margin:0; padding:0; }
   html,body { height:100%; background:var(--bg); color:var(--fg); overflow:hidden;
     font:300 18px/1.6 system-ui,'Segoe UI',sans-serif; cursor:default; user-select:none; }
-  main { height:100%; display:flex; flex-direction:column; align-items:center; padding:12vh 24px 0; }
+  main { height:100%; display:flex; flex-direction:column; align-items:center; padding:5vh 24px 0; }
 
   /* Círculo */
   #orb { position:relative; width:120px; height:120px; flex:none; border-radius:50%;
@@ -37,9 +37,13 @@
   @keyframes dot { 0%,100%{opacity:.2} 50%{opacity:1} }
 
   /* Conversación */
-  #log { width:100%; max-width:680px; margin-top:7vh; flex:1; overflow:hidden;
-    display:flex; flex-direction:column; justify-content:flex-start; gap:4px; user-select:text; }
-  .turn { transition:opacity 1.2s; white-space:pre-wrap; word-wrap:break-word; }
+  #log { width:100%; max-width:680px; margin-top:3vh; flex:1; overflow-y:auto;
+    display:flex; flex-direction:column; justify-content:flex-end; gap:4px;
+    user-select:text; -webkit-user-select:text; cursor:text;
+    scrollbar-width:thin; }
+  #log::-webkit-scrollbar { width:6px; } #log::-webkit-scrollbar-thumb { background:#222; }
+  .turn { transition:opacity 1.2s; white-space:pre-wrap; word-wrap:break-word;
+    user-select:text; -webkit-user-select:text; }
   .turn.user { color:var(--accent); margin-top:18px; }
   .turn.agent { color:var(--fg); }
   .turn.fading { opacity:0; }
@@ -51,12 +55,67 @@
   .confirm button:hover { border-color:var(--accent); }
   .link { color:var(--accent); cursor:pointer; border-bottom:1px solid #3a3228; }
 
+  /* Indicador de que el agente trabaja (siempre visible bajo la conversacion) */
+  #think { display:none; align-items:center; gap:8px; max-width:680px; width:100%;
+    padding:10px 2px 2px; color:var(--dim); font-size:14px; letter-spacing:.08em; flex:none; }
+  #think.on { display:flex; }
+  #think .d { width:6px; height:6px; border-radius:50%; background:var(--accent);
+    animation:dot 1.2s ease-in-out infinite; }
+  #think .d:nth-child(2){animation-delay:.2s} #think .d:nth-child(3){animation-delay:.4s}
+  #think .txt { color:var(--dim); }
+
   /* Entrada */
-  form { width:100%; max-width:680px; padding:18px 0 5vh; flex:none; }
+  form { width:100%; max-width:680px; padding:14px 0 3vh; flex:none; }
   #input { width:100%; background:transparent; border:0; border-bottom:1px solid #333; outline:0;
     color:var(--fg); font:inherit; padding:6px 2px; caret-color:var(--accent); }
   #input::placeholder { color:#262626; }
   #input:focus { border-bottom-color:#444; }
+
+
+  /* Paneles de arranque (red / proveedor). Se desvanecen tras el OK. */
+  #panel { position:fixed; inset:0; background:rgba(8,8,8,.94); display:none;
+    align-items:center; justify-content:center; z-index:20; }
+  #panel.open { display:flex; }
+  .card { width:100%; max-width:460px; padding:0 24px; }
+  .card h2 { font-weight:300; font-size:20px; margin-bottom:8px; }
+  .card .sub { font-size:14px; color:var(--dim); margin-bottom:20px; line-height:1.5; }
+  .netlist { list-style:none; max-height:46vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .netlist li { display:flex; align-items:center; gap:10px; padding:8px 6px; cursor:pointer;
+    border-bottom:1px solid #111; font-size:15px; }
+  .netlist li .sec { color:#444; font-size:12px; }
+  .ssid { color:var(--accent); word-break:break-all; }
+  .netlist li .d { width:8px; height:8px; border-radius:50%; border:1.4px solid var(--dim); flex:none; }
+  .netlist li.sel .d { background:var(--accent); border-color:var(--accent); }
+  .netlist li .n { flex:1; font-size:16px; }
+  .netlist li.sel .n { color:var(--accent); }
+  .field { margin-top:16px; }
+  .field input { width:100%; background:transparent; border:0; border-bottom:1px solid #333;
+    outline:0; color:var(--fg); font:inherit; padding:7px 2px; caret-color:var(--accent); }
+  .field input::placeholder { color:#262626; }
+  .field input:focus { border-bottom-color:#555; }
+  .btn { width:100%; margin-top:22px; background:none; border:1px solid #2a2a2a; color:var(--accent);
+    font:inherit; font-size:16px; padding:11px; cursor:pointer; transition:border-color .3s; }
+  .btn:hover { border-color:var(--accent); }
+  .btn:disabled { color:#333; border-color:#1a1a1a; cursor:default; }
+  .btn.mini { width:auto; margin:0; padding:2px 6px; border:0; font-size:14px; }
+  .msg { min-height:22px; margin-top:12px; font-size:14px; color:var(--dim); text-align:center; }
+  .skip { display:block; margin:14px auto 0; background:none; border:0; color:#3a3a3a;
+    font:inherit; font-size:14px; cursor:pointer; }
+  .skip:hover { color:var(--dim); }
+
+
+  /* Teclado en pantalla PROPIO. El de Weston pinta las teclas pero no escribe
+     en el campo (WPE no actualiza el input por el protocolo text-input). Este
+     teclado escribe directo en el input por JS: siempre funciona. */
+  #kbd { margin-top:14px; user-select:none; }
+  #kbd .krow { display:flex; justify-content:center; gap:5px; margin-top:5px; }
+  #kbd .key { flex:1 1 0; max-width:52px; min-width:30px; text-align:center;
+    background:#111; border:1px solid #1e1e1e; border-radius:4px; color:#d8d8d8;
+    font-size:16px; padding:11px 0; cursor:pointer; }
+  #kbd .key:active { background:#1c1c1c; }
+  #kbd .key.acc { color:var(--accent); }
+  #kbd .key.w2 { flex:2 1 0; max-width:120px; }
+  #kbd .key.w3 { flex:5 1 0; max-width:none; }
 
   /* Visor */
   #viewer { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none;
@@ -77,19 +136,25 @@
     <div class="dots"><i></i><i></i><i></i></div>
   </div>
   <div id="log" aria-live="polite"></div>
+  <div id="think"><span class="d"></span><span class="d"></span><span class="d"></span><span class="txt">el agente está trabajando…</span></div>
   <form id="form" autocomplete="off"><input id="input" placeholder="..." spellcheck="false" autofocus></form>
 </main>
 <div id="viewer"></div>
+<div id="panel"><div class="card" id="card"></div></div>
+
 
 <script>
 "use strict";
 const MAX_TURNS = 4;                       // intercambios visibles
 const $ = id => document.getElementById(id);
 const orb = $("orb"), log = $("log"), input = $("input"), viewer = $("viewer");
-let ws = null, current = null, busy = false, listening = false;
+let ws = null, current = null, busy = false, listening = false, shownOffline = false;
 const tools = new Map();                   // id → elemento "⚙ nombre..."
 
 function setState(s) { orb.className = s; }
+function thinkOn(txt) { const t = document.getElementById('think'); if (t) { t.querySelector('.txt').textContent = txt || 'el agente está trabajando…'; t.classList.add('on'); scrollLog(); } }
+function thinkOff() { const t = document.getElementById('think'); if (t) t.classList.remove('on'); }
+function scrollLog() { const l = document.getElementById('log'); if (l) l.scrollTop = l.scrollHeight; }
 function idle() { setState(listening ? "listening" : ""); }
 
 /* ---------- conversación ---------- */
@@ -163,20 +228,21 @@ function connect() {
   ws = new WebSocket(proto + (location.host || "localhost:8080") + "/ws");
   ws.onopen = () => idle();
   ws.onclose = () => {
-    setState("offline"); busy = false; current = null;
+    setState("offline"); busy = false; current = null; thinkOff();
     log.querySelectorAll(".confirm, .tool").forEach(n => n.remove()); tools.clear();
     setTimeout(connect, 2000);
   };
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     switch (m.type) {
-      case "ready": orb.title = m.llm || ""; idle(); break;
-      case "token": setState("thinking"); agentTurn().textContent += m.text; break;
+      case "ready": orb.title = m.llm || ""; shownOffline = false; idle(); break;
+      case "token": setState("thinking"); agentTurn().textContent += m.text; thinkOn("escribiendo…"); scrollLog(); break;
       case "tool": {
         setState("thinking");
         if (m.status === "running") {
           const t = document.createElement("div");
           t.className = "tool"; t.textContent = "⚙ " + m.name + "...";
+          thinkOn("⚙ " + m.name + "…"); scrollLog();
           log.appendChild(t); tools.set(m.id, t);
           current = null;   // el texto posterior va en una línea nueva
         } else {
@@ -194,12 +260,15 @@ function connect() {
         const el = current && current.textContent ? current
                  : (m.text ? addTurn("agent", m.text) : null);
         if (el) linkify(el);
-        current = null; busy = false; idle(); input.focus(); break;
+        current = null; busy = false; idle(); thinkOff(); scrollLog(); input.focus(); break;
       }
       case "error":
         setState("error");
-        addTurn("agent", m.text).style.color = "#8b6a6a";
-        busy = false; current = null;
+        if (!shownOffline) {              /* solo UNA vez, no en cada reintento */
+          shownOffline = true;
+          addTurn("agent", m.text).style.color = "#8b6a6a";
+        }
+        busy = false; current = null; thinkOff();
         setTimeout(() => { if (ws.readyState === 1 && !busy) idle(); }, 3000);
         break;
     }
@@ -235,15 +304,210 @@ $("form").onsubmit = e => {
   addTurn("user", text);
   current = null; busy = true;
   setState("thinking");
+  thinkOn();
   send({ type: "message", text });
   prune();
 };
 
 /* Clic en el círculo: reservado para la voz (por ahora solo alterna el estado visual) */
 orb.onclick = () => { if (orb.classList.contains("offline")) return; listening = !listening; if (!busy) idle(); input.focus(); };
-document.addEventListener("click", e => { if (!viewer.contains(e.target) && !window.getSelection().toString()) input.focus(); });
+document.addEventListener("click", e => {
+  // NO robar el foco si hay un panel abierto (contrasena / red / proveedor) ni
+  // si el clic es en un input/boton: al pulsar una red, este manejador devolvia
+  // el foco al campo del chat y el campo de la contrasena se quedaba sin foco
+  // (habia que volver a pulsar el boton izquierdo).
+  if (document.getElementById("panel").classList.contains("open")) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "BUTTON" || t.tagName === "TEXTAREA")) return;
+  if (!viewer.contains(t) && !window.getSelection().toString()) input.focus();
+});
 
 connect();
+boot();
+setInterval(() => { if (!busy) boot(); }, 15000);
+
+
+/* ---------- teclado en pantalla propio ---------- */
+const LANGS = [
+  { code:"es", name:"Espa\u00f1ol",     rows:[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l","\u00f1"],["\u21e7","z","x","c","v","b","n","m","\u00ab","\u00bb"],["?123"," ","\u232b"]] },
+  { code:"us", name:"English (US)", rows:[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l",";"],["\u21e7","z","x","c","v","b","n","m",",","."],["?123"," ","\u232b"]] },
+  { code:"gb", name:"English (UK)", rows:[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l",";"],["\u21e7","z","x","c","v","b","n","m",",","."],["?123"," ","\u232b"]] },
+  { code:"fr", name:"Fran\u00e7ais",    rows:[["a","z","e","r","t","y","u","i","o","p"],["q","s","d","f","g","h","j","k","l","m"],["\u21e7","w","x","c","v","b","n",",",";",":"],["?123"," ","\u232b"]] },
+  { code:"de", name:"Deutsch",    rows:[["q","w","e","r","t","z","u","i","o","p","\u00fc"],["a","s","d","f","g","h","j","k","l","\u00f6","\u00e4"],["\u21e7","y","x","c","v","b","n","m",";",":"],["?123"," ","\u232b"]] },
+  { code:"it", name:"Italiano",   rows:[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l","\u00f2"],["\u21e7","z","x","c","v","b","n","m",",","."],["?123"," ","\u232b"]] },
+  { code:"pt", name:"Portugu\u00eas", rows:[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l","\u00e7"],["\u21e7","z","x","c","v","b","n","m",",","."],["?123"," ","\u232b"]] },
+];
+const KBD_NUM = [["1","2","3","4","5","6","7","8","9","0"],
+                 ["-","_","@",".",",",";",":","/","\\","+"],
+                 ["\u21e7","(",")","[","]","{","}","\"","'","\u00ab"],
+                 ["ABC"," ","\u232b"]];
+let kbdLang = "es", kbdLayout = "abc", kbdShift = false;
+function kbdRows() {
+  if (kbdLayout === "num") return KBD_NUM;
+  const L = LANGS.find(l => l.code === kbdLang) || LANGS[0];
+  return L.rows;
+}
+function setLang(code) { kbdLang = code; }   /* mismo idioma para el teclado propio */
+
+const KBD_LAYOUTS = {
+  abc: [["q","w","e","r","t","y","u","i","o","p"],
+        ["a","s","d","f","g","h","j","k","l","\u00f1"],
+        ["\u21e7","z","x","c","v","b","n","m","\u00ab","\u00bb"],
+        ["?123"," ","\u232b"]],
+  num: [["1","2","3","4","5","6","7","8","9","0"],
+        ["-","_","@",".",",",";",":","/","\\","+"],
+        ["\u21e7","(",")","[","]","{","}","\"","'","\u00ab"],
+        ["ABC"," ","\u232b"]],
+};
+
+function mountKbd(input) {
+  const host = $("kbd"); if (!host || !input) return;
+  function draw() {
+    host.innerHTML = "";
+    kbdRows().forEach(row => {
+      const r = document.createElement("div"); r.className = "krow";
+      row.forEach(k => {
+        const b = document.createElement("div");
+        b.className = "key" + (k.length > 1 ? (k === " " ? " w3" : " w2") : "") +
+                      (k === "\u232b" || k === "?123" || k === "ABC" || k === "\u21e7" ? " acc" : "");
+        b.textContent = (kbdShift && k.length === 1 && /[a-z\u00f1]/.test(k)) ? k.toUpperCase() : k;
+        b.onclick = () => {
+          if (k === "\u232b") input.value = input.value.slice(0, -1);
+          else if (k === "?123") { kbdLayout = "num"; kbdShift = false; draw(); return; }
+          else if (k === "ABC") { kbdLayout = "abc"; kbdShift = false; draw(); return; }
+          else if (k === "\u21e7") { kbdShift = !kbdShift; draw(); return; }
+          else if (k === " ") input.value += " ";
+          else input.value += (kbdShift && /[a-z\u00f1]/.test(k)) ? k.toUpperCase() : k;
+          input.focus();
+        };
+        r.appendChild(b);
+      });
+      host.appendChild(r);
+    });
+  }
+  draw();
+}
+
+/* ---------- paneles de arranque (red / proveedor) ---------- */
+const panel = $("panel"), card = $("card");
+function showPanel(h) { card.innerHTML = h; panel.classList.add("open"); }
+function hidePanel() { panel.classList.remove("open"); card.innerHTML = ""; }
+
+async function jget(u) { try { return await (await fetch(u)).json(); } catch { return {}; } }
+
+async function boot() {
+  if (panel.classList.contains("open")) return;
+  const st = await jget("/llm/status");
+  if (!st.lang) return panelLang();          /* 1) idioma del teclado */
+  setLang(st.lang);
+  const net = await jget("/net/status");
+  if (!net.connected) return panelNet();      /* 2) red */
+  if (!st.configured) return panelLLM();      /* 3) proveedor + clave */
+  hidePanel();
+}
+
+async function panelLang() {
+  const st = await jget("/llm/status");
+  let html = "<h2>Idioma del teclado</h2>" +
+    "<div class='sub'>Elígelo una vez. Se usa para el teclado físico y para el de pantalla.</div>" +
+    "<ul class='netlist' id='lg'></ul>";
+  showPanel(html);
+  const ul = $("lg");
+  LANGS.forEach(L => {
+    const li = document.createElement("li");
+    li.innerHTML = "<span class='d'></span><span class='n'></span><span class='sec'></span>";
+    li.querySelector(".n").textContent = L.name;
+    li.querySelector(".sec").textContent = L.code.toUpperCase();
+    li.onclick = async () => {
+      setLang(L.code);
+      await jget("/llm/set?lang=" + encodeURIComponent(L.code));   /* persiste + aplica xkb */
+      hidePanel();
+      setTimeout(boot, 300);        /* continua con red / proveedor */
+    };
+    ul.appendChild(li);
+  });
+}
+
+function esc(t) { return (t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+async function panelNet() {
+  const r = await jget("/net/list");
+  const nets = r.networks || [];
+  let html = "<h2>Conectar a una red</h2>" +
+    "<div class='sub'>No hay internet. Sin red el agente no puede responder.</div>";
+  if (!nets.length) {
+    html += "<div class='msg'>No se ven redes. ¿Está el WiFi activado?</div>";
+    showPanel(html);
+    return;
+  }
+  html += "<ul class='netlist' id='nl'></ul>";
+  showPanel(html);
+  const nl = $("nl");
+  nets.forEach(n => {
+    const li = document.createElement("li");
+    li.innerHTML = "<span class='d'></span><span class='n'></span><span class='sec'></span>";
+    li.querySelector(".n").textContent = n.ssid;
+    li.querySelector(".sec").textContent = (n.security === "abierta" || !n.security) ? "" : "\uD83D\uDD12";
+    li.onclick = () => netPassword(n);      /* pasa a pedir la contrasena */
+    nl.appendChild(li);
+  });
+}
+
+function netPassword(n) {
+  const abierta = (n.security === "abierta" || !n.security);
+  showPanel(
+    "<h2>" + (abierta ? "Conectar a " : "Contrase\u00f1a de ") +
+      "<span class='ssid'>" + esc(n.ssid) + "</span></h2>" +
+    "<div class='sub'>" + (abierta ? "Red abierta." : "Escribe la contrase\u00f1a del WiFi.") + "</div>" +
+    (abierta ? "" : "<div class='field'><input id='pw' type='text' placeholder='Contrase\u00f1a' autocomplete='off' spellcheck='false'></div>" +
+                    "<div id='kbd'></div>") +
+    "<button class='btn' id='ok'>Conectar</button>" +
+    "<button class='skip' id='back'>\u2190 Elegir otra red</button>" +
+    "<div class='msg' id='m'></div>");
+  const pwf = $("pw");
+  if (pwf) { mountKbd(pwf); pwf.focus(); }
+  $("ok").onclick = async () => {
+    $("m").textContent = "Conectando a " + n.ssid + "\u2026";
+    $("ok").disabled = true;
+    const q = "/net/connect?ssid=" + encodeURIComponent(n.ssid) +
+              "&password=" + encodeURIComponent(pwf ? pwf.value : "");
+    const res = await jget(q);
+    if (res.ok) { $("m").textContent = "Conectado."; setTimeout(hidePanel, 900); }
+    else { $("m").textContent = "No se pudo conectar. " + esc(res.msg || ""); $("ok").disabled = false; }
+  };
+  $("back").onclick = () => panelNet();
+}
+
+async function panelLLM() {
+  const st = await jget("/llm/status");
+  let html = "<h2>Conectar con el modelo</h2>" +
+    "<div class='sub'>Pega tu clave de API. Si no la tienes, abre la web del proveedor y cópiala.</div>" +
+    "<div class='field'><input id='k' type='text' placeholder='Clave API (pégala)' autocomplete='off' spellcheck='false'></div>" +
+    "<div id='kbd'></div>" +
+    "<button class='btn' id='openweb'>Abrir la web del proveedor</button>" +
+    "<div class='field'><input id='u' value='" + (st.base_url || "https://ollama.com/v1") + "'></div>" +
+    "<div class='field'><input id='mo' value='" + (st.model || "deepseek-v4.1-flash:cloud") + "'></div>" +
+    "<button class='btn' id='ok'>Guardar y empezar</button>" +
+    "<button class='skip' id='skip'>Configurar más tarde</button><div class='msg' id='m'></div>";
+  showPanel(html);
+  const kf = $("k");
+  if (kf) { mountKbd(kf); kf.focus(); }
+  // Abrir la web del proveedor en el navegador del sistema (permite copiar la clave).
+  $("openweb").onclick = () => {
+    const url = ($("u").value || "").indexOf("openai") >= 0 ? "https://platform.openai.com/api-keys"
+                                                            : "https://ollama.com/settings/keys";
+    window.open(url, "_blank");     /* el agente/navegador la abre; luego se pega aquí */
+  };
+  $("ok").onclick = async () => {
+    $("m").textContent = "Guardando…";
+    await jget("/llm/set?backend=openai&key=" + encodeURIComponent($("k").value) +
+               "&model=" + encodeURIComponent($("mo").value) +
+               "&base_url=" + encodeURIComponent($("u").value));
+    hidePanel();
+  };
+  $("skip").onclick = hidePanel;
+}
+
 </script>
 </body>
 </html>

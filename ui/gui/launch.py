@@ -84,6 +84,12 @@ def main() -> int:
         print("[gui] El servidor no arrancó a tiempo", file=sys.stderr)
         stop()
     print(f"[gui] Abriendo {url} con {os.path.basename(cmd[0])}", flush=True)
+    # cog abre su superficie a 1024x768 por defecto (COG_PLATFORM_WL_VIEW_WIDTH/
+    # HEIGHT), asi que la interfaz NO llenaba la pantalla: se veia un recuadro
+    # sobre el fondo del compositor. Con FULLSCREEN=1 la superficie cubre TODA la
+    # salida, sea cual sea la resolucion (dice la doc de cog, platform-wl.md).
+    if os.path.basename(cmd[0]) == "cog":
+        os.environ["COG_PLATFORM_WL_VIEW_FULLSCREEN"] = "1"
     try:
         code = subprocess.call(cmd)      # el navegador es el proceso principal
     finally:
