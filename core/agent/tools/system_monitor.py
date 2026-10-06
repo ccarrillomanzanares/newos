@@ -13,7 +13,10 @@ from .base import Tool, ToolResult
 SECTIONS = ["cpu", "memory", "disk", "network", "processes", "uptime"]
 
 # Sistemas de ficheros virtuales que no interesan en el informe de disco
-_IGNORED_FS = {"squashfs", "tmpfs", "devtmpfs", "overlay", "proc", "sysfs", "cgroup", "cgroup2", "autofs",
+# Solo se descartan los fs VIRTUALES que no aportan nada al informe. OJO: tmpfs NO
+# se descarta: en el sistema live (todo en RAM) la raiz y /data son tmpfs, y
+# filtrarlos dejaba la seccion de discos VACIA.
+_IGNORED_FS = {"squashfs", "devtmpfs", "proc", "sysfs", "cgroup", "cgroup2", "autofs",
                "nsfs", "tracefs", "debugfs", "fusectl", "configfs", "securityfs", "pstore", "bpf", "mqueue"}
 
 
@@ -72,7 +75,9 @@ class SystemMonitorTool(Tool):
             }
         if "disk" in sections:
             disks = []
-            for part in psutil.disk_partitions(all=False):
+            # all=True: si no, en un sistema live (raiz en RAM) NO devuelve NADA,
+            # porque psutil solo lista dispositivos fisicos con all=False.
+            for part in psutil.disk_partitions(all=True):
                 if part.fstype in _IGNORED_FS or part.mountpoint.startswith(("/snap", "/proc", "/sys")):
                     continue
                 try:
@@ -134,8 +139,9 @@ class SystemMonitorTool(Tool):
         if "disk" in data:
             out.append("Discos:")
             for d in data["disk"]:
+                ram = " (RAM)" if d["fstype"] in ("tmpfs", "rootfs", "ramfs") else ""
                 out.append(f"  {d['mountpoint']:<20} {d['device']:<18} {d['used_gb']}/{d['total_gb']} GB "
-                           f"({d['percent']}%), libres {d['free_gb']} GB [{d['fstype']}]")
+                           f"({d['percent']}%), libres {d['free_gb']} GB [{d['fstype']}]{ram}")
         if "network" in data:
             out.append("Red:")
             for n in data["network"]:
