@@ -33,16 +33,23 @@ logger = logging.getLogger("agentos.voice.gemini")
 WS_URL = ("wss://generativelanguage.googleapis.com/ws/"
           "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
 DEFAULT_MODEL = os.environ.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview")
-DEFAULT_VOICE = os.environ.get("AGENTOS_LIVE_VOICE", "Kore")   # Kore = femenina
+DEFAULT_VOICE = os.environ.get("AGENTOS_LIVE_VOICE", "Leda")   # Leda = femenina, juvenil
+# Idioma de SALIDA (BCP-47). Es lo que fija el ACENTO. VACIO = automatico: el
+# modelo sigue el idioma del usuario (asi el SO sirve en cualquier pais). Solo
+# se rellena si algun dia se quiere FORZAR un acento concreto (--lang es-ES).
+DEFAULT_LANG = os.environ.get("AGENTOS_LIVE_LANG", "")
 IN_RATE = 16000     # micro
 OUT_RATE = 24000    # respuesta
 
 SYSTEM_INSTRUCTION = (
     "Eres AgentD, el administrador autonomo de AgentOS, un sistema operativo "
-    "conversacional. Hablas con el usuario por voz. Responde SIEMPRE en el idioma "
-    "en el que te hable el usuario (si te habla en espanol, contestas en espanol; "
-    "si en ingles, en ingles). Se breve, natural y directo: son respuestas "
-    "habladas, no un documento. No uses markdown, listas con asteriscos ni codigo."
+    "conversacional. Hablas con el usuario por voz.\n"
+    "IDIOMA: responde SIEMPRE en el idioma en el que te hable el usuario. Si te "
+    "habla en espanol, contesta en ESPANOL DE ESPANA (castellano): acento, "
+    "pronunciacion y expresiones de Espana, nunca latinoamericanas. Si te habla "
+    "en ingles, en ingles; y asi con cualquier idioma.\n"
+    "ESTILO: breve, natural, calido y directo; son respuestas habladas para el "
+    "oido, no un documento. No uses markdown, listas con asteriscos ni codigo."
 )
 
 
@@ -64,22 +71,26 @@ class GeminiLive:
     """Sesion de voz contra la Live API."""
 
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL,
-                 voice: str = DEFAULT_VOICE, instrucciones: str = SYSTEM_INSTRUCTION):
+                 voice: str = DEFAULT_VOICE, instrucciones: str = SYSTEM_INSTRUCTION,
+                 lang: str = DEFAULT_LANG):
         self.key = api_key or _clave()
         self.model = model
         self.voice = voice
+        self.lang = lang
         self.instrucciones = instrucciones
         self.ws = None
 
     async def conectar(self):
         import websockets
         self.ws = await websockets.connect(f"{WS_URL}?key={self.key}", max_size=None)
+        speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self.voice}}}
+        if self.lang:
+            speech["languageCode"] = self.lang      # fija el ACENTO (p.ej. es-ES)
         await self.ws.send(json.dumps({"setup": {
             "model": f"models/{self.model}",
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
-                "speechConfig": {"voiceConfig": {
-                    "prebuiltVoiceConfig": {"voiceName": self.voice}}},
+                "speechConfig": speech,
             },
             "systemInstruction": {"parts": [{"text": self.instrucciones}]},
         }}))
@@ -135,10 +146,10 @@ def _guardar_wav(pcm: bytes, ruta: str, rate: int = OUT_RATE) -> str:
     return ruta
 
 
-async def _test(texto: str, salida: str) -> int:
-    from concurrent.futures import ThreadPoolExecutor
+async def _test(texto: str, salida: str, voice: str | None = None,
+                  lang: str | None = None) -> int:
     loop = asyncio.get_running_loop()
-    g = GeminiLive()
+    g = GeminiLive(voice=voice or DEFAULT_VOICE, lang=lang if lang is not None else DEFAULT_LANG)
     print(f"conectando al modelo {g.model} (voz {g.voice})...")
     await g.conectar()
     print("setup OK -> enviando:", texto)
@@ -175,10 +186,11 @@ def main() -> int:
     ap.add_argument("--out", default="/tmp/agentos_voz.wav")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--voice", default=DEFAULT_VOICE)
+    ap.add_argument("--lang", default=DEFAULT_LANG, help="idioma de salida (es-ES, en-US...)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if a.test:
-        return asyncio.run(_test(a.test, a.out))
+        return asyncio.run(_test(a.test, a.out, a.voice, a.lang))
     ap.print_help()
     return 2
 
