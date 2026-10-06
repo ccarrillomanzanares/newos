@@ -1,19 +1,43 @@
 #!/bin/sh
-# /etc/init.d/S71weston — Weston (Wayland) en kiosk, como root.
+# /etc/init.d/S71weston — Weston (Wayland), como root.
 # El socket queda en /run/user/0/wayland-0 (lo usa S99agentos para la GUI).
-# Se ejecuta DESPUÉS de S70seatd (Weston necesita el gestor de asientos).
+# Se ejecuta DESPUES de S70seatd (Weston necesita el gestor de asientos).
+#
+# IMPORTANTE: Weston necesita un controlador DRM KMS para renderizar. En una
+# config generica los drivers de GPU son MODULOS, y modprobe por modalias puede
+# tardar (udev) — o no dispararse a tiempo. Si Weston arranca ANTES de que el
+# driver este cargado, coge el framebuffer basico (simpledrm), la ventana de la
+# interfaz NO se compone y la pantalla queda sin la interfaz. Por eso aqui:
+#   1) se cargan los drivers de GPU mas comunes a mano (i915, amdgpu, nouveau,
+#      radeon, virtio_gpu, vmwgfx, bochs), y
+#   2) se espera a /dev/dri/card0 (max 15 s).
+DRIVERS="i915 amdgpu nouveau radeon virtio_gpu vmwgfx bochs"
 
 DAEMON="weston"
 PIDFILE="/var/run/$DAEMON.pid"
 export XDG_RUNTIME_DIR=/run/user/0
 
+cargar_gpu() {
+    for d in $DRIVERS; do modprobe "$d" 2>/dev/null; done
+    # Algunas GPUs necesitan tambien el driver DRM que expone KMS.
+    i=0
+    while [ ! -e /dev/dri/card0 ] && [ $i -lt 15 ]; do
+        udevadm trigger --subsystem-match=drm 2>/dev/null
+        udevadm settle --timeout=2 2>/dev/null
+        sleep 1; i=$((i + 1))
+    done
+    [ -e /dev/dri/card0 ]
+}
+
 start() {
     printf "Starting $DAEMON: "
     mkdir -p /run/user/0
     chmod 0700 /run/user/0
-    # --socket=wayland-0 fija el nombre del socket. Sin esto Weston coge el
-    # primer nombre libre (en la VM acababa en wayland-1), y quien espere
-    # "wayland-0" se queda colgado para siempre.
+    if cargar_gpu; then
+        printf "[dri ok] "
+    else
+        printf "[aviso: sin /dev/dri/card0] "
+    fi
     start-stop-daemon -S -q -b -m -p $PIDFILE -x /usr/bin/weston -- --idle-time=0 --socket=wayland-0
     [ $? = 0 ] && echo "OK" || echo "FAIL"
 }

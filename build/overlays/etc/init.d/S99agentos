@@ -1,6 +1,11 @@
 #!/bin/sh
-# /etc/init.d/S99agentos — arranca AgentD al final del boot (BusyBox init).
+# /etc/init.d/S99agentos — arranca la interfaz y AgentD al final del boot.
 # Uso: /etc/init.d/S99agentos {start|stop|restart|status}
+#
+# ORDEN IMPORTANTE: la interfaz ES el SO, asi que se arranca PRIMERO y sin
+# esperar a nada. AgentD necesita RED (su backend LLM es remoto) y esa espera
+# no debe retrasar la pantalla: si tarda, el usuario ve una pantalla vacia sin
+# saber por que. La red y el agente se buscan en SEGUNDO PLANO.
 #
 # NOTA: BusyBox start-stop-daemon NO soporta -d (chdir).
 #       El cd se hace dentro del propio comando shell.
@@ -12,6 +17,7 @@ LOGFILE=/var/log/agentd.log
 PYTHON=/usr/bin/python3
 GUI_PIDFILE=/run/agentos/gui.pid
 GUI_LOGFILE=/var/log/agentos-gui.log
+INITLOG=/var/log/agentd-init.log
 
 export AGENTOS_MODE=os
 export AGENTOS_DATA_DIR=/data/agent
@@ -19,30 +25,22 @@ export AGENTOS_SOCKET=/run/agentos/input.sock
 export AGENTOS_MODEL_PATH=/data/models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 export AGENTOS_LOG_FORMAT=json
 export PYTHONPATH="$AGENTOS_HOME"
-# El agente abre aplicaciones gráficas con bash_exec: necesita saber DÓNDE está
-# el display. Se exporta aquí, en el entorno del servicio, para que lo hereden
-# AgentD y todo lo que ejecute. Antes solo se definía dentro de start_gui(), es
-# decir, DESPUÉS de arrancar AgentD: el agente no lo veía y abrir una ventana
-# fallaba aunque el compositor estuviera vivo.
+# El agente abre aplicaciones graficas con bash_exec: necesita saber DONDE esta
+# el display, y lo hereda todo lo que ejecute.
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 export HOME=/root
 
-# Sobrescrituras locales (las escribe first-boot.sh / agentos-config).
 load_config() {
     [ -f /etc/default/agentos ] && { set -a; . /etc/default/agentos; set +a; }
 }
 
-# Esperar a que haya RED DE VERDAD antes de arrancar AgentD.
-# NetworkManager arranca en S45, pero conseguir IP y DNS tarda mas. Sin esto,
-# AgentD consulta el backend remoto (Ollama Cloud) antes de que exista internet,
-# no lo encuentra, termina con "No hay ningun backend LLM disponible" y muere.
-# El socket nunca llega a crearse y la interfaz se queda esperandolo.
+# Esperar a que haya RED DE VERDAD (NetworkManager arranca en S45, pero reunir
+# IP y DNS tarda mas). Se ejecuta EN SEGUNDO PLANO.
 AGENTOS_NET_WAIT="${AGENTOS_NET_WAIT:-45}"
 wait_for_network() {
     i=0
     while [ "$i" -lt "$AGENTOS_NET_WAIT" ]; do
-        # 1.1.1.1 comprueba que hay ruta a internet; ollama.com, ademas, el DNS.
         if ping -c1 -W2 1.1.1.1 >/dev/null 2>&1 && ping -c1 -W2 ollama.com >/dev/null 2>&1; then
             return 0
         fi
@@ -52,9 +50,8 @@ wait_for_network() {
     return 1
 }
 
-# Lanza AgentD una vez y espera su socket (max. 60 s). Devuelve 0 si esta listo.
+# Lanza AgentD y espera su socket (max 60 s). Devuelve 0 si esta listo.
 launch_agentd() {
-    # cd dentro del comando — BusyBox start-stop-daemon no soporta -d
     start-stop-daemon -S -q -b -m -p "$PIDFILE" \
         -x /bin/sh -- -c "cd $AGENTOS_HOME && exec $PYTHON -m core.ipc.socket_server >> $LOGFILE 2>&1"
     i=0
@@ -64,50 +61,39 @@ launch_agentd() {
     [ -S "$AGENTOS_SOCKET" ]
 }
 
-start() {
-    load_config
-    printf "Iniciando %s: " "$NAME"
-    mkdir -p /run/agentos /data/agent /data/models
-    chmod 0750 /run/agentos
-
-    # El agente necesita red para su backend LLM remoto: esperarla primero.
-    if wait_for_network; then
-        printf "[red lista] "
-    else
-        printf "[aviso: sin red tras %ss] " "$AGENTOS_NET_WAIT"
-    fi
-
-    # Reintentar: si el backend aun no responde, el proceso termina y hay que
-    # volver a lanzarlo. Tres intentos con 5 s entre ellos.
-    intento=1
-    while [ "$intento" -le 3 ]; do
-        if launch_agentd; then
-            echo "OK"
-            start_gui
-            return 0
-        fi
-        if [ "$intento" -lt 3 ]; then
-            printf "[reintento %s] " "$intento"
-            sleep 5
-        fi
-        intento=$((intento + 1))
-    done
-
-    # La interfaz ES la pantalla del SO: se arranca igualmente. Si AgentD no
-    # está, ui/gui/server.py lo intenta en cada petición y la interfaz puede
-    # decir en pantalla que no hay agente, en vez de dejar el compositor
-    # vacío sin ninguna explicación.
-    echo "AVISO (AgentD no responde tras 3 intentos; la interfaz se arranca igual: ver $LOGFILE)"
-    start_gui
-}
-
+# Interfaz grafica: es la pantalla del SO. La ejecuta agentos-gui, un supervisor
+# que la relanza sola si el navegador o el servidor terminan.
 start_gui() {
-    printf "Iniciando interfaz gráfica: "
-    # La interfaz es la pantalla del SO: la ejecuta agentos-gui, un supervisor
-    # que la relanza sola si el navegador o el servidor terminan. Se invoca vía
-    # /bin/sh para no depender del bit de ejecución en el overlay.
+    printf "Iniciando interfaz grafica: "
     start-stop-daemon -S -q -b -m -p "$GUI_PIDFILE" \
         -x /bin/sh -- -c "exec /usr/bin/agentos-gui"
+    echo "OK"
+}
+
+# AgentD EN SEGUNDO PLANO: espera red y reintenta sin bloquear el arranque.
+start_agent_bg() {
+    (
+        if wait_for_network; then printf "[red lista] "; else printf "[aviso: sin red] "; fi
+        intento=1
+        while [ "$intento" -le 3 ]; do
+            if launch_agentd; then echo "[agentd OK]"; exit 0; fi
+            if [ "$intento" -lt 3 ]; then printf "[reintento %s] " "$intento"; sleep 5; fi
+            intento=$((intento + 1))
+        done
+        echo "[agentd no responde; ver $LOGFILE]"
+    ) >> "$INITLOG" 2>&1 &
+}
+
+start() {
+    load_config
+    mkdir -p /run/agentos /data/agent /data/models
+    chmod 0750 /run/agentos
+    printf "Iniciando %s: " "$NAME"
+
+    # 1) La interfaz, YA (no depende de la red).
+    start_gui
+    # 2) La red y AgentD, en segundo plano.
+    start_agent_bg
     echo "OK"
 }
 
@@ -130,7 +116,7 @@ stop() {
 
 status() {
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-        echo "$NAME en ejecución (PID $(cat "$PIDFILE"))"
+        echo "$NAME en ejecucion (PID $(cat "$PIDFILE"))"
     else
         echo "$NAME detenido"; return 3
     fi
