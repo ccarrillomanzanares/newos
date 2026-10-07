@@ -1,0 +1,46 @@
+#!/bin/sh
+# S70agentos-audio — carga el driver de sonido antes que la interfaz.
+#
+# En una configuracion de kernel generica los drivers son MODULOS, y la autocarga
+# por modalias puede NO disparar (es el mismo fallo, aun sin confirmar, que deja
+# la GPU sin driver). Si el modulo de sonido no esta cargado, no existe /dev/snd
+# y la voz no funciona: ni el micro (arecord) ni el altavoz (aplay).
+#
+# Aqui se hace modprobe a mano y se espera a que aparezca la tarjeta. No depende
+# de PulseAudio: la voz lee el micro directamente por ALSA.
+
+DRIVERS="snd_hda_intel snd_usb_audio snd_hda_codec_realtek snd_hda_codec_generic"
+NAME=agentos-audio
+
+start() {
+    printf "Iniciando %s: " "$NAME"
+    for d in $DRIVERS; do modprobe "$d" 2>/dev/null; done
+    i=0
+    while [ ! -e /dev/snd/controlC0 ] && [ $i -lt 15 ]; do
+        udevadm trigger --subsystem-match=sound 2>/dev/null
+        udevadm settle --timeout=2 2>/dev/null
+        sleep 1
+        i=$((i+1))
+    done
+    if [ -e /dev/snd/controlC0 ]; then
+        printf "[audio ok] "
+        # Desilenciar y subir la captura: muchos portatiles traen el micro en mute
+        # y entonces arecord devuelve silencio (el agente oye nada). Best-effort:
+        # si el control no existe en esta tarjeta, amixer falla y se ignora.
+        amixer -c 0 sset Capture cap 2>/dev/null
+        amixer -c 0 sset Master cap 2>/dev/null
+        amixer -c 0 sset Capture 80% 2>/dev/null
+    else
+        printf "[aviso: sin tarjeta de sonido] "
+    fi
+    echo "OK"
+}
+
+stop() { :; }
+
+case "$1" in
+    start|restart|reload) start ;;
+    stop) stop ;;
+    *) echo "Uso: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0

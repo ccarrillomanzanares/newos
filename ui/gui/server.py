@@ -246,6 +246,57 @@ def voice_preview(voz):
         return False
 
 
+# --- Voz por ALSA (el micro lo lee el SERVIDOR, no el navegador) --------------
+# El navegador (cog/WPE) no puede capturar audio: no hay GStreamer ni WebRTC.
+# El puente ui/voice/alsa_bridge.py lee el micro con arecord, lo manda a Gemini
+# Live y reproduce la respuesta con aplay. Aqui solo se enciende, se apaga y se
+# reenvia al chat lo que el agente va diciendo.
+_VOZ = None                      # AudioBridge (uno solo)
+_CLIENTES: set = set()          # websockets conectados, para difundir la voz
+
+
+async def _difundir(msg: dict) -> None:
+    for ws in list(_CLIENTES):
+        try:
+            await ws.send(json.dumps(msg, ensure_ascii=False))
+        except Exception:
+            _CLIENTES.discard(ws)
+
+
+def _voz():
+    global _VOZ
+    if _VOZ is None:
+        from ui.voice.alsa_bridge import AudioBridge
+        cfg = voice_config()
+        _VOZ = AudioBridge(
+            voice=cfg.get("voice") or None,
+            on_text=lambda t, fin=False: asyncio.create_task(
+                _difundir({"type": "voice_text", "text": t, "final": fin})),
+            on_state=lambda st: asyncio.create_task(
+                _difundir({"type": "voice_state", "state": st})))
+    return _VOZ
+
+
+def voz_arrancar():
+    """Lanza el micro en segundo plano (abrir micro+socket tarda ~1 s)."""
+    b = _voz()
+    asyncio.create_task(b.start())
+    return True
+
+
+def voz_parar():
+    if _VOZ is not None and _VOZ.activo:
+        asyncio.create_task(_VOZ.stop())
+    return True
+
+
+def voz_estado():
+    if _VOZ is None:
+        return {"active": False, "error": "", "mic": ""}
+    return {"active": _VOZ.activo, "error": _VOZ.error,
+            "mic": " ".join(_VOZ.comando_micro or [])}
+
+
 def llm_set(backend, key, model, base_url, lang=""):
     """Escribe la config del proveedor y reinicia AgentD para que la use."""
     lines = []
@@ -330,6 +381,12 @@ def http_response(path: str):
     if url.path == "/voice/preview":
         voz = (parse_qs(url.query).get("voice") or [""])[0]
         return _json({"ok": voice_preview(voz), "voice": voz})
+    if url.path == "/voice/mic/start":
+        return _json({"ok": voz_arrancar()})
+    if url.path == "/voice/mic/stop":
+        return _json({"ok": voz_parar()})
+    if url.path == "/voice/mic/status":
+        return _json(voz_estado())
     if url.path == "/llm/status":
         return _json(llm_status())
     if url.path == "/llm/set":
@@ -460,10 +517,13 @@ async def main(host: str, port: int, socket_path: Path) -> None:
         log.warning("AgentD no responde todavía; la UI reintentará al conectar")
 
     async def handler(ws, *_: object) -> None:
+        _CLIENTES.add(ws)
         try:
             await Bridge(ws, socket_path).run()
         except ConnectionClosed:
             pass
+        finally:
+            _CLIENTES.discard(ws)
 
     pr = process_request_legacy if LEGACY else process_request
     async with serve(handler, host, port, process_request=pr, max_size=2**20):

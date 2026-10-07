@@ -260,6 +260,15 @@ function connect() {
         break;
       }
       case "confirm": askConfirm(m); break;
+      case "voice_text":   /* el agente hablando: lo dice el puente de ALSA */
+        if (m.final) { current = null; }
+        else if (m.text) { setState("thinking"); agentTurn().textContent += m.text; thinkOn("speaking…"); scrollLog(); }
+        break;
+      case "voice_state":
+        if (m.state === "listening") { vozOn = true; setState("listening"); }
+        else if (m.state === "error") { vozOn = false; setState("error"); addTurn("agent", "No encuentro un micrófono con señal."); }
+        else { vozOn = false; idle(); }
+        break;
       case "done": {
         const el = current && current.textContent ? current
                  : (m.text ? addTurn("agent", m.text) : null);
@@ -313,34 +322,23 @@ $("form").onsubmit = e => {
   prune();
 };
 
-/* Clic en el círculo: reservado para la voz (por ahora solo alterna el estado visual) */
-/* El ORBE es el boton de VOZ: al tocarlo se abre el micro, hablas y el agente
-   contesta con voz (Gemini Live) y ademas deja el texto en el chat. Volver a
-   tocarlo cierra el micro. */
+/* El ORBE es el boton de VOZ. Al tocarlo, el SERVIDOR abre el micro por ALSA
+   (arecord -> Gemini Live -> aplay): la captura NO pasa por el navegador,
+   porque cog/WPE no puede leer el micro. Volver a tocarlo lo cierra.
+   El texto de lo que dice el agente llega por el chat (voice_text). */
 let vozOn = false;
 orb.onclick = async () => {
   if (orb.classList.contains("offline")) return;      /* sin agente, nada */
-  if (vozOn) { vozOn = false; AgentVoice.stop(); idle(); return; }
-  try {
-    const cfg = await jget("/voice/key");
-    if (!cfg || !cfg.key) { addTurn("agent", "No hay clave de voz configurada."); return; }
-    vozOn = true; current = null;
-    setState("listening");
-    AgentVoice.start({
-      key: cfg.key, model: cfg.model, voice: cfg.voice,
-      instruction: "Eres AgentD, el administrador autonomo de AgentOS. Hablas por voz. "
-        + "Responde SIEMPRE en el idioma en el que te hable el usuario y se breve, "
-        + "natural y calido. No uses markdown.",
-      onState: (st) => {
-        if (st === "idle" && vozOn) { vozOn = false; idle(); }
-        else if (st === "error") { vozOn = false; setState("error"); }
-      },
-      onText: (txt, fin) => {
-        if (fin) { current = null; }
-        else if (txt) { setState("thinking"); agentTurn().textContent += txt; scrollLog(); }
-      },
-    });
-  } catch (e) { vozOn = false; setState("error"); addTurn("agent", "No se pudo abrir el microfono: " + e); }
+  if (vozOn) {
+    vozOn = false;
+    await jget("/voice/mic/stop");
+    idle();
+    return;
+  }
+  vozOn = true; current = null;
+  setState("listening");
+  const r = await jget("/voice/mic/start");
+  if (!r || !r.ok) { vozOn = false; setState("error"); addTurn("agent", "No se pudo abrir el micrófono."); }
 };
 document.addEventListener("click", e => {
   // NO robar el foco si hay un panel abierto (contrasena / red / proveedor) ni
