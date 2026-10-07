@@ -1,31 +1,15 @@
 #!/bin/sh
-# /etc/init.d/S60agentos-pip — primer arranque con red: instala con pip los
-# paquetes Python que Buildroot no trae (voz). Se ejecuta en segundo plano
-# y solo una vez (marca en /var/lib/agentos/pip.done).
-
-STAMP=/var/lib/agentos/pip.done
-LOG=/var/log/agentos-pip.log
-PKGS="faster-whisper sounddevice"
-
-start() {
-    [ -f "$STAMP" ] && return 0
-    mkdir -p /var/lib/agentos
-    (
-        # esperar hasta 5 min a tener red
-        i=0
-        while ! python3 -c "import urllib.request as u; u.urlopen('https://pypi.org/simple/', timeout=5)" 2>/dev/null \
-              && [ $i -lt 60 ]; do
-            sleep 5; i=$((i + 1))
-        done
-        if python3 -m pip install --no-cache-dir $PKGS >> "$LOG" 2>&1; then
-            touch "$STAMP"
-        fi
-    ) &
-}
-
+# /etc/init.d/S60agentos-pip — DESACTIVADO.
+#
+# Antes instalaba faster-whisper y sounddevice en el primer arranque (el metodo
+# viejo de voz). La voz ahora la da Gemini Live, que es speech-to-speech nativo
+# y solo necesita 'websockets' (ya viene en la imagen). Instalar aquellos
+# paquetes era lento, confundia al agente (veia dependencias de voz sueltas) y
+# ademas fallaba por PortAudio. Se deja el script como no-op para no romper
+# nada que lo llame.
+start() { :; }
 case "$1" in
-    start) start ;;
-    stop|restart|reload) ;;
+    start|stop|restart|reload) start ;;
     *) echo "Uso: $0 {start|stop}"; exit 1 ;;
 esac
 exit 0

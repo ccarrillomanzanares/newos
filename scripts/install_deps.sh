@@ -14,7 +14,7 @@ else
     --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 fi
 "$PY" -m pip install psutil colorama aiofiles httpx sqlalchemy pytest pytest-asyncio
-if [[ "${WITH_VOICE:-1}" == "1" ]]; then
-  "$PY" -m pip install faster-whisper piper-tts sounddevice numpy || echo "[install] AVISO: extras de voz no instalados"
-fi
+# La voz usa Gemini Live (speech-to-speech): solo necesita websockets, que ya
+# se instala arriba. El metodo viejo (faster-whisper + piper + sounddevice) ya
+# no se usa; se quito para no instalar cosas que solo confundian al agente.
 echo "[install] OK"

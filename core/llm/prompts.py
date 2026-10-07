@@ -102,10 +102,52 @@ def environment_block(mode: str = "dev", cwd: str | None = None) -> str:
     return "\n".join(lines)
 
 
+
+def capabilities_block() -> str:
+    """
+    Lo que ESTE sistema puede hacer. Se inyecta en el system prompt para que el
+    agente no tenga que investigar su propio sistema operativo (en las pruebas
+    se contradecia: decia que no tenia voz y luego la encontraba).
+    """
+    cfg = {}
+    try:
+        for ruta in ("/etc/default/agentos", os.path.expanduser("~/.agentos/agentos.conf")):
+            if os.path.isfile(ruta):
+                for line in open(ruta, encoding="utf-8", errors="replace"):
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.split("=", 1)
+                        cfg[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    voz = cfg.get("AGENTOS_LIVE_VOICE", "Leda")
+    modelo_live = cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+    llm = cfg.get("AGENTOS_OPENAI_MODEL", "")
+    idioma = cfg.get("AGENTOS_LIVE_LANG", "")
+    return "\n".join([
+        "- VOICE: this system HAS voice, always available. It uses Gemini Live "
+        f"(model {modelo_live}, voice {voz}), which is speech-to-speech: the same "
+        "model hears and speaks. Do NOT claim you cannot hear or speak, and do "
+        "not investigate it with tools: it is a fact.",
+        "- The user starts voice by tapping the ORB in the interface (the circle). "
+        "It turns amber while listening; tapping again stops it.",
+        "- The startup menu also lets the user pick the voice (30 voices).",
+        "- You answer by voice AND your words appear as text in the chat.",
+        "- You speak the user's language"
+        + (f" (accent is fixed to {idioma})" if idioma else
+           " automatically, following whichever language the user uses"),
+        f"- Language model for text: {llm or 'configured at startup'}.",
+        "- The interface shows your replies as PLAIN TEXT (no markdown).",
+        "- If a tool returns an empty or incomplete section, say so; do not "
+        "invent results and do not contradict yourself.",
+    ])
+
 def build_system_prompt(registry: "ToolRegistry", mode: str = "dev", cwd: str | None = None,
                         extra_instructions: str | None = None) -> str:
     """Construye el system prompt completo con la lista de tools del registro."""
-    prompt = SYSTEM_PROMPT_TEMPLATE.format(environment=environment_block(mode, cwd),
+    entorno = environment_block(mode, cwd)
+    entorno += "\n\n# What this system can do\n" + capabilities_block()
+    prompt = SYSTEM_PROMPT_TEMPLATE.format(environment=entorno,
                                            tools=registry.get_all_descriptions())
     if extra_instructions:
         prompt += f"\n# Additional instructions\n{extra_instructions}\n"
