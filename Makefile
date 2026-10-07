@@ -5,6 +5,7 @@ BR_VERSION ?= 2024.11.1
 BR_DIR  := build/buildroot
 BR_OUT  := $(CURDIR)/build/output
 OUT     := $(BR_OUT)/images
+TARGET_DIR := $(BR_OUT)/target
 
 .PHONY: install-deps download-model run gui dev-cloud dev-agent agentd chat test build iso run-qemu run-qemu-iso clean
 
@@ -53,6 +54,10 @@ build:
 	  --exclude build --exclude board --exclude models \
 	  --exclude .git  --exclude training \
 	  ./ build/overlays/opt/agentos/
+	# Los overlays se COPIAN encima del target de Buildroot, de forma aditiva: si
+	# se borra un fichero del repo, se queda en la imagen para siempre. Se borra
+	# antes la copia del target para que refleje exactamente el repositorio.
+	rm -rf $(TARGET_DIR)/opt/agentos
 	$(MAKE) -C $(BR_DIR) O=$(BR_OUT) \
 	  BR2_EXTERNAL=$(CURDIR) \
 	  BR2_DEFCONFIG=$(CURDIR)/build/configs/agentos_defconfig \
