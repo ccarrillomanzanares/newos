@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# agentos-diag — recoge un diagnostico completo de AgentOS y lo sube a la VPS.
+#
+# Uso:
+#   agentos-diag            recoge + comprime + sube (si hay clave)
+#   agentos-diag --local    recoge + comprime, sin subir
+#
+# Variables:
+#   AGENTOS_DIAG_USER (def: diag)    AGENTOS_DIAG_HOST (def: 31.220.80.78)
+#   AGENTOS_DIAG_KEY  (def: /opt/agentos/diag/aios_diag)
+#
+# La subida usa rsync contra la cuenta 'diag', que esta RESTRINGIDA con rrsync
+# (comando forzado): solo puede ESCRIBIR en una carpeta, sin shell, sin sudo y
+# sin leer nada de la VPS. La clave vive en la imagen (gitignored) y es de solo
+# subida: si se filtra, no da acceso a la VPS.
+
+set -u
+
+TS=$(date +%Y%m%d_%H%M%S)
+HOST=$(hostname 2>/dev/null || echo agentos)
+OUT="/tmp/agentos-diag-work"
+BUNDLE="/tmp/agentos-diag-${TS}.tar.zst"
+
+DIAG_USER="${AGENTOS_DIAG_USER:-diag}"
+DIAG_HOST="${AGENTOS_DIAG_HOST:-31.220.80.78}"
+DIAG_KEY="${AGENTOS_DIAG_KEY:-/opt/agentos/diag/aios_diag}"
+
+UPLOAD=1
+[ "${1:-}" = "--local" ] && UPLOAD=0
+
+rm -rf "$OUT"; mkdir -p "$OUT/files" "$OUT/screenshots"
+
+run() { local name="$1"; shift; "$@" > "$OUT/files/$name.txt" 2>&1; }
+
+echo "Recogiendo diagnostico de AgentOS..."
+
+# ── sistema base ───────────────────────────────────────────────────────
+run uname         uname -a
+run os-release    cat /etc/os-release
+run date-uptime   sh -c 'date; echo; uptime; echo; cat /proc/uptime'
+run mem           free -h
+run disk          df -h
+run mounts        cat /proc/mounts
+run loadavg       cat /proc/loadavg
+run cpu           sh -c 'cat /proc/cpuinfo | grep -E "model name|processor" | head -4; echo; nproc'
+run cmdline       cat /proc/cmdline
+run block         sh -c 'lsblk -f 2>&1; echo; cat /proc/partitions'
+run pci           lspci -nn
+run usb           lsusb
+run ip-addr       ip addr
+run ip-route      ip route
+run dns           cat /etc/resolv.conf
+run net-status    sh -c 'nmcli -t device status 2>&1; echo; nmcli -t -f ACTIVE,SSID,SIGNAL device wifi list 2>&1 | head -15'
+run procs         ps -ef
+run environ       sh -c 'cat /proc/1/environ | tr "\0" "\n" 2>/dev/null; echo "--- agentd:"; PID=$(pgrep -f socket_server | head -1); [ -n "$PID" ] && tr "\0" "\n" < /proc/$PID/environ 2>/dev/null'
+
+# ── AgentOS: sus procesos y su config ──────────────────────────────────
+run agentos-procs sh -c 'pgrep -af "socket_server|agentos-gui|core.ipc|cog|weston|python3" 2>&1'
+run agentos-init  sh -c 'for f in /etc/init.d/S*agentos* /etc/init.d/S71weston; do echo "==== $f"; cat "$f"; done'
+run agentos-tools sh -c 'ls -la /opt/agentos/ 2>&1; echo; ls -la /opt/agentos/core/agent/tools/ 2>&1'
+run agentos-sock  sh -c 'ls -la /run/agentos/ 2>&1; echo; echo "input.sock vive:"; [ -S /run/agentos/input.sock ] && echo SI || echo NO'
+run agentos-data  sh -c 'ls -laR /data/agent 2>&1 | head -60'
+run agentos-conf  sh -c 'sed -E "s/(KEY|TOKEN|SECRET|PASSWORD)=.*/\1=***REDACTED***/I" /etc/default/agentos 2>&1'
+run agentos-git   sh -c 'cd /opt/agentos 2>/dev/null && git log --oneline -3 2>&1; echo; cat /opt/agentos/VERSION 2>&1'
+
+# ── LOGS (lo mas importante) ───────────────────────────────────────────
+run log-init      sh -c 'tail -300 /var/log/agentd-init.log 2>&1'
+run log-agentd    sh -c 'tail -500 /var/log/agentd.log 2>&1'
+run log-gui       sh -c 'tail -300 /var/log/agentos-gui.log 2>&1'
+run log-audit     sh -c 'tail -200 /data/agent/audit.log 2>&1'
+run log-autotune  sh -c 'cat /data/agent/autotune.json 2>&1'
+run log-sizes     sh -c 'ls -la /var/log/ 2>&1; echo; du -ah /var/log 2>/dev/null | sort -rh | head -10'
+
+# ── AUDIO (micro/altavoz: la pieza critica) ────────────────────────────
+run alsa-cards    sh -c 'cat /proc/asound/cards 2>&1; echo; cat /proc/asound/devices 2>&1'
+run alsa-devices  sh -c 'aplay -l 2>&1; echo; echo "== captura =="; arecord -l 2>&1'
+run alsa-conf     sh -c 'echo "== /etc/asound.conf =="; cat /etc/asound.conf 2>&1; echo; echo "== ~/.asoundrc =="; cat "$HOME/.asoundrc" 2>&1'
+run alsa-mixer    sh -c 'amixer -c 0 contents 2>&1 | head -200'
+run alsa-modules  sh -c 'lsmod | grep -E "snd|sound" 2>&1; echo; ls -la /dev/snd/ 2>&1'
+run alsa-dmesg    sh -c 'dmesg | grep -iE "snd|hda|audio|alsa|sof" | tail -60'
+run audio-out-test sh -c 'python3 -c "import math,struct,subprocess; pcm=b\"\".join(struct.pack(\"<h\",int(8000*math.sin(2*math.pi*880*i/44100))) for i in range(4410)); p=subprocess.run([\"aplay\",\"-q\",\"-f\",\"S16_LE\",\"-r\",\"44100\",\"-c\",\"1\"],input=pcm,timeout=10); print(\"aplay exit:\",p.returncode)" 2>&1'
+run audio-mic-test sh -c 'python3 - <<"PY"
+import subprocess, wave, struct, math, os
+wav = "/tmp/agentos-diag-mic.wav"
+try:
+    p = subprocess.run(["arecord","-q","-f","S16_LE","-r","16000","-c","1","-d","2",wav], timeout=15)
+    print("arecord exit:", p.returncode)
+except Exception as e:
+    print("arecord FAIL:", e); raise SystemExit
+if os.path.exists(wav):
+    w = wave.open(wav); n = w.getnframes(); d = w.readframes(n)
+    if d:
+        s = struct.unpack("<%dh" % (len(d)//2), d)
+        rms = math.sqrt(sum(x*x for x in s)/len(s))
+        print("mic: %.2fs RMS=%d %s" % (n/w.getframerate(), rms, "SILENCIO" if rms < 200 else "SENAL OK"))
+    else:
+        print("mic: sin datos")
+    os.remove(wav)
+PY'
+
+# ── VIDEO / compositor (orbe) ──────────────────────────────────────────
+run gpu-dri       sh -c 'ls -la /dev/dri/ 2>&1; echo; for c in /sys/class/drm/*/status; do echo -n "$c: "; cat "$c" 2>&1; done'
+run gpu-modules   sh -c 'lsmod | grep -E "i915|amdgpu|vmwgfx|nouveau|drm" 2>&1'
+run gpu-dmesg     sh -c 'dmesg | grep -iE "drm|i915|amdgpu|vmwgfx|fb0|simpledrm" | tail -60'
+run weston        sh -c 'ls -la /run/user/*/wayland-* 2>&1; echo; cat /etc/xdg/weston/weston.ini 2>&1'
+run cog           sh -c 'pgrep -af cog 2>&1; echo; ls -la /usr/lib/cog/modules/ 2>&1'
+
+# ── errores del kernel ─────────────────────────────────────────────────
+run dmesg-tail    sh -c 'dmesg | tail -250 2>&1'
+run kern-err      sh -c 'dmesg | grep -iE "error|fail|panic|denied|timeout|warn" | tail -80 2>&1'
+
+# ── capturas de pantalla (si las hubiera) ──────────────────────────────
+SHOTS_DIR="$HOME/screenshots"
+if [ -d "$SHOTS_DIR" ]; then
+    find "$SHOTS_DIR" -maxdepth 1 -type f -name "*.png" \
+        -exec cp {} "$OUT/screenshots/" \; 2>/dev/null
+fi
+N_SHOTS=$(ls "$OUT/screenshots" 2>/dev/null | wc -l)
+
+# ── README ─────────────────────────────────────────────────────────────
+{
+    echo "AgentOS diagnostic bundle"
+    echo "Date:        $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Host:        $HOST"
+    echo "User:        $(id -un 2>/dev/null)"
+    echo "Screenshots: $N_SHOTS"
+} > "$OUT/README.txt"
+
+# ── empaquetar (zstd si se puede; si no, gzip) ─────────────────────────
+if tar --zstd -cf "$BUNDLE" -C "$OUT" . 2>/dev/null; then
+    :
+else
+    BUNDLE="${BUNDLE%.zst}.tar.gz"
+    tar czf "$BUNDLE" -C "$OUT" . 2>/dev/null
+fi
+rm -rf "$OUT"
+
+echo "Bundle: $BUNDLE ($(du -h "$BUNDLE" 2>/dev/null | cut -f1))"
+
+# ── subir (si hay clave y red) ─────────────────────────────────────────
+if [ "$UPLOAD" = 1 ] && [ -f "$DIAG_KEY" ]; then
+    if rsync -e "ssh -i '$DIAG_KEY' -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15" \
+              "$BUNDLE" "$DIAG_USER@$DIAG_HOST:./" 2>/dev/null; then
+        echo "Subido a $DIAG_USER@$DIAG_HOST (solo escritura)"
+    else
+        echo "No se pudo subir (clave o red?). El bundle queda en $BUNDLE"
+    fi
+elif [ "$UPLOAD" = 1 ]; then
+    echo "Sin clave de subida ($DIAG_KEY). Bundle local: $BUNDLE"
+fi

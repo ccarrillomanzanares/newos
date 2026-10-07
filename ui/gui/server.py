@@ -292,9 +292,16 @@ def voz_parar():
 
 def voz_estado():
     if _VOZ is None:
-        return {"active": False, "error": "", "mic": ""}
-    return {"active": _VOZ.activo, "error": _VOZ.error,
-            "mic": " ".join(_VOZ.comando_micro or [])}
+        return {"active": False, "error": "", "mic": "", "volume": 100, "mute": False}
+    return _VOZ.ajustes()
+
+
+def voz_volumen(vol):
+    return {"ok": _voz().set_volume(vol), **_voz().ajustes()}
+
+
+def voz_silencio(on):
+    return {"ok": _voz().set_mute(on), **_voz().ajustes()}
 
 
 def llm_set(backend, key, model, base_url, lang=""):
@@ -387,6 +394,12 @@ def http_response(path: str):
         return _json({"ok": voz_parar()})
     if url.path == "/voice/mic/status":
         return _json(voz_estado())
+    if url.path == "/voice/volume":
+        vol = (parse_qs(url.query).get("v") or ["100"])[0]
+        return _json(voz_volumen(vol))
+    if url.path == "/voice/mute":
+        on = (parse_qs(url.query).get("on") or ["1"])[0] in ("1", "true", "on", "yes")
+        return _json(voz_silencio(on))
     if url.path == "/llm/status":
         return _json(llm_status())
     if url.path == "/llm/set":

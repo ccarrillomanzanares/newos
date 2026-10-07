@@ -32,6 +32,27 @@
   #orb.error, #orb.offline { border-color:var(--err); }
   #orb.offline { animation-duration:6s; opacity:.5; }
 
+  /* Control de sonido: on/off + volumen. Ultraminimalista: un icono y una
+     linea fina, en el mismo tono del orbe. Nada de sliders grandes. */
+  #snd { display:flex; align-items:center; gap:10px; margin-top:2.2vh; opacity:.55;
+    transition:opacity .3s; }
+  #snd:hover { opacity:1; }
+  #snd.on { opacity:.95; }
+  #snd button { background:none; border:0; padding:0; cursor:pointer; color:var(--accent);
+    line-height:0; }
+  #snd button svg { width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:1.4;
+    stroke-linecap:round; }
+  #snd .mute-slash { display:none; }
+  #snd.muted .mute-slash { display:block; }
+  #snd input[type=range] { -webkit-appearance:none; appearance:none; width:104px; height:14px;
+    background:none; cursor:pointer; }
+  #snd input[type=range]::-webkit-slider-runnable-track { height:1px; background:#2a2a2a; }
+  #snd input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:8px; height:8px;
+    border-radius:50%; background:var(--accent); margin-top:-3.5px; }
+  #snd input[type=range]::-moz-range-track { height:1px; background:#2a2a2a; }
+  #snd input[type=range]::-moz-range-thumb { width:8px; height:8px; border:0; border-radius:50%;
+    background:var(--accent); }
+
   @keyframes breathe { 0%,100%{transform:scale(.97)} 50%{transform:scale(1.03)} }
   @keyframes spin { to{transform:rotate(360deg)} }
   @keyframes dot { 0%,100%{opacity:.2} 50%{opacity:1} }
@@ -138,6 +159,15 @@
     <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/>
       <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
     <div class="dots"><i></i><i></i><i></i></div>
+  </div>
+  <div id="snd" title="Sonido">
+    <button id="sndbtn" aria-label="Silenciar">
+      <svg viewBox="0 0 24 24"><path d="M4 9v6h3.5L12 18.5v-13L7.5 9H4z"
+        fill="currentColor" stroke="none"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/>
+        <path class="mute-slash" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>
+    </button>
+    <input id="sndvol" type="range" min="0" max="100" step="5" value="100"
+      aria-label="Volumen" data-hermes-ignore="1">
   </div>
   <div id="log" aria-live="polite"></div>
   <div id="think"><span class="d"></span><span class="d"></span><span class="d"></span><span class="txt">working…</span></div>
@@ -339,7 +369,23 @@ orb.onclick = async () => {
   setState("listening");
   const r = await jget("/voice/mic/start");
   if (!r || !r.ok) { vozOn = false; setState("error"); addTurn("agent", "No se pudo abrir el micrófono."); }
+  else sndPinta(await jget("/voice/mic/status"));
 };
+
+/* ---------- control de sonido: silencio + volumen ---------- */
+const snd = $("snd"), sndbtn = $("sndbtn"), sndvol = $("sndvol");
+function sndPinta(st) {
+  if (!st) return;
+  if (typeof st.volume === "number") sndvol.value = st.volume;
+  snd.classList.toggle("muted", !!st.mute);
+  snd.classList.toggle("on", !!st.active && !st.mute);
+}
+sndbtn.onclick = async () => {
+  const silenciar = !snd.classList.contains("muted");   // si suena, lo silencio
+  sndPinta(await jget("/voice/mute?on=" + (silenciar ? "1" : "0")));
+};
+sndvol.oninput = () => snd.classList.toggle("muted", Number(sndvol.value) === 0);
+sndvol.onchange = async () => sndPinta(await jget("/voice/volume?v=" + encodeURIComponent(sndvol.value)));
 document.addEventListener("click", e => {
   // NO robar el foco si hay un panel abierto (contrasena / red / proveedor) ni
   // si el clic es en un input/boton: al pulsar una red, este manejador devolvia
@@ -700,6 +746,7 @@ const AgentVoice = (function () {
    rechazada y habia que esperar 15 s al reintento del setInterval. */
 connect();
 boot();
+jget("/voice/mic/status").then(sndPinta).catch(() => {});
 setInterval(() => { if (!busy) boot(); }, 15000);
 </script>
 </body>

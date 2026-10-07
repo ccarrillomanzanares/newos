@@ -24,6 +24,10 @@ export AGENTOS_DATA_DIR=/data/agent
 export AGENTOS_SOCKET=/run/agentos/input.sock
 export AGENTOS_MODEL_PATH=/data/models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 export AGENTOS_LOG_FORMAT=json
+# Logs de DEBUG: el diagnostico (agentos-diag / tool 'diag') los necesita para
+# poder depurar. Si algun dia las trazas llenan la RAM (la raiz es ramfs), se
+# baja a INFO aqui.
+export AGENTOS_LOG_LEVEL=DEBUG
 export PYTHONPATH="$AGENTOS_HOME"
 # El agente abre aplicaciones graficas con bash_exec: necesita saber DONDE esta
 # el display, y lo hereda todo lo que ejecute.

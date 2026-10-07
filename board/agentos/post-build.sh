@@ -8,6 +8,14 @@ install -D -m 0755 "$BOARD_DIR/install-to-disk.sh" "$TARGET_DIR/usr/bin/agentos-
 # Plantilla del menú GRUB que usa el instalador (@ROOT@ -> PARTUUID del disco)
 install -D -m 0644 "$BOARD_DIR/grub.cfg" "$TARGET_DIR/usr/share/agentos/grub.cfg"
 
+# Clave SSH de subida de diagnosticos. La cuenta 'diag' de la VPS esta
+# restringida con rrsync (solo escritura, sin shell). Va FUERA del repo
+# (diag/aios_diag esta en .gitignore) porque es una credencial: se copia a la
+# imagen desde el arbol de trabajo, no desde git.
+if [ -f "$BOARD_DIR/../../diag/aios_diag" ]; then
+    install -D -m 0600 "$BOARD_DIR/../../diag/aios_diag" "$TARGET_DIR/opt/agentos/diag/aios_diag"
+fi
+
 # Asistente de primer arranque y agentos-config (board/ no se copia a /opt/agentos
 # con el rsync del Makefile; /usr/bin/agentos-config es un enlace a esta ruta)
 install -D -m 0755 "$BOARD_DIR/first-boot.sh" "$TARGET_DIR/opt/agentos/board/agentos/first-boot.sh"
@@ -24,7 +32,7 @@ install -D -m 0755 "$BOARD_DIR/agentos-config.sh" "$TARGET_DIR/opt/agentos/board
 # carro y el shebang no es valido:
 #   "/bin/sh^M: bad interpreter: No such file or directory"
 for f in "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* "$TARGET_DIR"/usr/bin/agentos-gui \
-         "$TARGET_DIR"/usr/bin/agentos-config; do
+         "$TARGET_DIR"/usr/bin/agentos-config "$TARGET_DIR"/usr/bin/agentos-diag; do
     [ -f "$f" ] || continue
     tr -d '\r' < "$f" > "$f.lf" && mv -f "$f.lf" "$f"
 done
@@ -33,7 +41,7 @@ done
 # falla con "Permission denied" y el servicio (Weston incluido) NO arranca —
 # sin ningún error visible en pantalla.
 chmod 0755 "$TARGET_DIR"/etc/init.d/S[0-9][0-9]* 2>/dev/null || true
-chmod 0755 "$TARGET_DIR"/usr/bin/agentos-gui "$TARGET_DIR"/usr/bin/agentos-config 2>/dev/null || true
+chmod 0755 "$TARGET_DIR"/usr/bin/agentos-gui "$TARGET_DIR"/usr/bin/agentos-config "$TARGET_DIR"/usr/bin/agentos-diag 2>/dev/null || true
 
 
 # /var/log es un symlink a ../tmp en esta imagen, así que no se crea: el

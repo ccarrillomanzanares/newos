@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from .app_launcher import AppLauncherTool
 from .base import RiskLevel, Tool, ToolRegistry, ToolResult
 from .bash_exec import BashExecTool
+from .diag import DiagTool
 from .file_ops import FileOpsTool
 from .package_manager import PackageManagerTool
 from .process_manager import ProcessManagerTool
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Tool", "ToolResult", "ToolRegistry", "RiskLevel", "BashExecTool", "FileOpsTool", "ProcessManagerTool",
-    "SystemMonitorTool", "PackageManagerTool", "build_default_registry",
+    "SystemMonitorTool", "PackageManagerTool", "DiagTool", "build_default_registry",
 ]
 
 
@@ -38,4 +39,5 @@ def build_default_registry(config: "AgentConfig | None" = None) -> ToolRegistry:
     registry.register(ProcessManagerTool())
     registry.register(SystemMonitorTool())
     registry.register(PackageManagerTool(timeout=cfg.package_timeout))
+    registry.register(DiagTool())
     return registry

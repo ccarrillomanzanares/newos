@@ -33,6 +33,7 @@ import logging
 import os
 import select
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -48,6 +49,47 @@ PROBE_SECONDS = 1.0
 # Tamano del trozo que se manda al modelo (100 ms). Mas pequeno = menos
 # latencia de subida; mas grande = menos paquetes. 100 ms va bien.
 CHUNK = IN_RATE * 2 // 10
+
+# Ajustes de la voz (volumen y silencio) que deben sobrevivir al reinicio:
+# se guardan en el mismo fichero de configuracion del sistema.
+CFG = Path("/etc/default/agentos")
+
+
+def _escala(pcm: bytes, factor: float) -> bytes:
+    """Baja el volumen de un bloque PCM s16le SIN tocar el mixer de la tarjeta
+    (los nombres de los controles cambian de un equipo a otro; el PCM es igual
+    en todos)."""
+    n = len(pcm) // 2
+    if n == 0 or factor >= 0.999:
+        return pcm
+    muestras = struct.unpack("<%dh" % n, pcm[:n * 2])
+    return struct.pack("<%dh" % n, *[int(v * factor) for v in muestras])
+
+
+def _leer_cfg(claves) -> dict:
+    out = {}
+    try:
+        for line in CFG.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k in claves:
+                    out[k] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return out
+
+
+def _guardar_cfg(kv: dict) -> None:
+    try:
+        lineas = []
+        if CFG.is_file():
+            lineas = [l for l in CFG.read_text(encoding="utf-8", errors="replace").splitlines()
+                      if not any(l.startswith(k + "=") for k in kv)]
+        lineas += ["%s=%s" % (k, v) for k, v in kv.items()]
+        CFG.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +203,15 @@ class AudioBridge:
         self._vivo = False
         self.comando_micro = None
         self.error = ""
+        # Volumen/mute de la VOZ de salida (0.0-1.0). Se aplica al PCM antes de
+        # mandarlo a aplay: no depende de nombres de controles del mixer, que
+        # cambian de una tarjeta a otra.
+        self.vol = 1.0
+        self.mute = False
+        # Mientras el agente HABLA se deja de mandar micro: si no, se oye a si
+        # mismo, se interrumpe y entra en bucle (retroalimentacion).
+        self.hablando = False
+        self._ultimo_audio = 0.0
 
     # -- estado ------------------------------------------------------------
     @property
@@ -204,6 +255,13 @@ class AudioBridge:
     def _suena(self, pcm: bytes):
         if not pcm:
             return
+        # el agente esta hablando: el micro se silencia en _bombea_micro
+        self.hablando = True
+        self._ultimo_audio = time.time()
+        if self.mute or self.vol <= 0.0:
+            return
+        if self.vol < 0.999:
+            pcm = _escala(pcm, self.vol)
         if self._salida is None or self._salida.poll() is not None:
             self._salida = self._abrir_salida()
         if self._salida is None:
@@ -215,6 +273,29 @@ class AudioBridge:
         except (BrokenPipeError, ValueError, AttributeError):
             self._salida = None
         # (si no hay altavoz, el texto de la transcripcion sigue saliendo en el chat)
+
+    def set_volume(self, vol):
+        """Volumen de la voz, 0-100 (100 = como viene). Se recuerda al reiniciar."""
+        try:
+            v = int(vol)
+        except (TypeError, ValueError):
+            return False
+        self.vol = max(0.0, min(1.0, v / 100.0))
+        if self.vol > 0:
+            self.mute = False
+        _guardar_cfg({"AGENTOS_VOICE_VOLUME": str(v),
+                      "AGENTOS_VOICE_MUTE": "0" if not self.mute else "1"})
+        return True
+
+    def set_mute(self, on):
+        self.mute = bool(on)
+        _guardar_cfg({"AGENTOS_VOICE_MUTE": "1" if self.mute else "0"})
+        return True
+
+    def ajustes(self):
+        return {"volume": int(round(self.vol * 100)), "mute": self.mute,
+                "active": self.activo, "error": self.error,
+                "mic": " ".join(self.comando_micro or [])}
 
     # -- micro -------------------------------------------------------------
     async def _bombea_micro(self):
@@ -235,6 +316,12 @@ class AudioBridge:
                 continue
             if not trozo:
                 break
+            # Si el agente esta hablando, se LEE igual (para no llenar el tubo)
+            # pero NO se manda: evita que se oiga a si mismo y se interrumpa.
+            if self.hablando:
+                if time.time() - self._ultimo_audio > 1.0:
+                    self.hablando = False
+                continue
             try:
                 await self.g.audio(trozo)
             except Exception as exc:
@@ -267,6 +354,14 @@ class AudioBridge:
         if self.comando_micro is None:
             loop = asyncio.get_running_loop()
             self.comando_micro = await loop.run_in_executor(None, elegir_captura)
+        # Recuperar el volumen/silencio que el usuario dejo puestos
+        guardado = _leer_cfg({"AGENTOS_VOICE_VOLUME", "AGENTOS_VOICE_MUTE"})
+        if "AGENTOS_VOICE_VOLUME" in guardado:
+            try:
+                self.vol = max(0.0, min(1.0, int(guardado["AGENTOS_VOICE_VOLUME"]) / 100.0))
+            except ValueError:
+                pass
+        self.mute = guardado.get("AGENTOS_VOICE_MUTE") == "1"
         if not self.comando_micro:
             self.error = "no hay ningun dispositivo de microfono con senal"
             log.error(self.error)

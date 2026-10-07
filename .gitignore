@@ -12,4 +12,7 @@ build/overlays/opt/
 
 # Credenciales pre-bakeadas en el overlay (nunca subir al repo)
 build/overlays/etc/default/agentos
+# Clave SSH de subida de diagnosticos (credencial: nunca al repo)
+diag/aios_diag
+diag/*.key
 build/overlays/etc/agentos/.configured

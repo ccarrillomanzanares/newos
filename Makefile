@@ -52,7 +52,7 @@ build:
 	mkdir -p build/overlays/opt/agentos
 	rsync -a --delete \
 	  --exclude build --exclude board --exclude models \
-	  --exclude .git  --exclude training \
+	  --exclude .git  --exclude training --exclude diag \
 	  ./ build/overlays/opt/agentos/
 	# Los overlays se COPIAN encima del target de Buildroot, de forma aditiva: si
 	# se borra un fichero del repo, se queda en la imagen para siempre. Se borra
