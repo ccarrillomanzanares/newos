@@ -191,11 +191,12 @@ class AudioBridge:
     """
 
     def __init__(self, voice: str | None = None, lang: str | None = None,
-                 on_text=None, on_state=None):
+                 on_text=None, on_state=None, on_tool=None):
         self.voice = voice
         self.lang = lang
         self.on_text = on_text          # callback(texto, es_final)
         self.on_state = on_state        # callback("listening"|"idle"|"error")
+        self.on_tool = on_tool          # callback(peticion) -> avisar de que se ejecuta algo
         self.g: GeminiLive | None = None
         self._mic = None                # subproceso arecord
         self._salida = None             # subproceso aplay
@@ -212,6 +213,11 @@ class AudioBridge:
         # mismo, se interrumpe y entra en bucle (retroalimentacion).
         self.hablando = False
         self._ultimo_audio = 0.0
+        # Mientras AgentD ejecuta una accion pedida por voz tampoco se manda el
+        # micro: si no, el modelo oye al usuario "por encima" de su propia tarea.
+        self.ejecutando = False
+        # Socket de AgentD: es con quien habla la voz para EJECUTAR cosas.
+        self.agent_socket = Path(os.environ.get("AGENTOS_SOCKET", "/run/agentos/input.sock"))
 
     # -- estado ------------------------------------------------------------
     @property
@@ -316,17 +322,90 @@ class AudioBridge:
                 continue
             if not trozo:
                 break
-            # Si el agente esta hablando, se LEE igual (para no llenar el tubo)
-            # pero NO se manda: evita que se oiga a si mismo y se interrumpa.
+            # Si el agente esta hablando (o ejecutando una accion), se LEE igual
+            # (para no llenar el tubo) pero NO se manda: evita que se oiga a si
+            # mismo y se interrumpa, y que oiga al usuario por encima de su tarea.
             if self.hablando:
                 if time.time() - self._ultimo_audio > 1.0:
                     self.hablando = False
+                continue
+            if self.ejecutando:
                 continue
             try:
                 await self.g.audio(trozo)
             except Exception as exc:
                 log.warning("se corto el envio al modelo: %s", exc)
                 break
+
+    # -- manos: la voz pide, AgentD ejecuta --------------------------------
+    async def _ejecutar_en_agentd(self, peticion: str) -> str:
+        """Manda la peticion a AgentD por su socket y devuelve lo que hizo.
+
+        AgentD tiene TODAS las tools (bash_exec, file_ops, diag...), asi que la
+        voz no necesita duplicarlas: pide "abre el navegador" y AgentD lo hace.
+        """
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(self.agent_socket), limit=8 * 1024 * 1024)
+        except OSError as exc:
+            return f"No puedo ejecutar nada: AgentD no responde ({exc})"
+
+        async def enviar(obj):
+            writer.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
+            await writer.drain()
+
+        try:
+            await reader.readline()                      # hello
+            await enviar({"type": "message", "text": peticion})
+            partes = []
+            while True:
+                linea = await asyncio.wait_for(reader.readline(), timeout=240)
+                if not linea:
+                    break
+                ev = json.loads(linea)
+                t = ev.get("type")
+                if t == "token":
+                    partes.append(ev.get("text", ""))
+                elif t == "tool_call" and self.on_tool:
+                    try:
+                        self.on_tool(ev.get("name", ""))
+                    except Exception:
+                        pass
+                elif t == "confirm_request":
+                    # Accion que AgentD quiere confirmar: por voz no se confirma
+                    # (no hay boton). Se rechaza y que lo cuente hablando.
+                    await enviar({"type": "confirm", "id": ev.get("id"), "approved": False})
+                elif t == "final":
+                    if not partes and ev.get("text"):
+                        partes.append(ev["text"])
+                    break
+                elif t == "error":
+                    return f"AgentD respondio con un error: {ev.get('message', '')}"
+            return "".join(partes).strip() or "Hecho."
+        except asyncio.TimeoutError:
+            return "AgentD tardo demasiado en responder."
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"No pude ejecutar la accion: {exc}"
+        finally:
+            try:
+                writer.close()
+            except Exception:
+                pass
+
+    async def _atiende_tool(self, llamadas: list) -> None:
+        peticion = ""
+        for fc in llamadas:
+            args = fc.get("args") or fc.get("arguments") or {}
+            peticion = args.get("request") or peticion
+        log.info("la voz pide ejecutar: %r", peticion)
+        self.ejecutando = True
+        try:
+            resultado = await self._ejecutar_en_agentd(peticion) if peticion else "No entendi la peticion."
+        finally:
+            self.ejecutando = False
+        try:
+            await self.g.responder_tool(llamadas, resultado)
+        except Exception as exc:
+            log.warning("no pude devolver el resultado al modelo: %s", exc)
 
     # -- respuestas --------------------------------------------------------
     async def _bombea_modelo(self):
@@ -369,7 +448,8 @@ class AudioBridge:
             return False
 
         self.g = GeminiLive(voice=self.voice or DEFAULT_VOICE,
-                            lang=self.lang if self.lang is not None else "")
+                            lang=self.lang if self.lang is not None else "",
+                            on_tool_call=self._atiende_tool)
         try:
             await self.g.conectar()
         except Exception as exc:

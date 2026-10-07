@@ -272,6 +272,8 @@ def _voz():
             voice=cfg.get("voice") or None,
             on_text=lambda t, fin=False: asyncio.create_task(
                 _difundir({"type": "voice_text", "text": t, "final": fin})),
+            on_tool=lambda name: asyncio.create_task(
+                _difundir({"type": "voice_tool", "name": name})),
             on_state=lambda st: asyncio.create_task(
                 _difundir({"type": "voice_state", "state": st})))
     return _VOZ

@@ -49,8 +49,38 @@ SYSTEM_INSTRUCTION = (
     "pronunciacion y expresiones de Espana, nunca latinoamericanas. Si te habla "
     "en ingles, en ingles; y asi con cualquier idioma.\n"
     "ESTILO: breve, natural, calido y directo; son respuestas habladas para el "
-    "oido, no un documento. No uses markdown, listas con asteriscos ni codigo."
+    "oido, no un documento. No uses markdown, listas con asteriscos ni codigo.\n"
+    "ACCIONES: TIENES MANOS. Cuando el usuario te pida hacer algo en el sistema "
+    "(abrir una aplicacion o el navegador, mirar o cambiar algo, instalar, "
+    "comprobar la red, el disco, los procesos, hacer un diagnostico...), llama a "
+    "la funcion run_in_system con la peticion tal cual. NO digas que no puedes: "
+    "puedes. Cuando la funcion te devuelva el resultado, cuentaselo hablando."
 )
+
+# Una SOLA funcion: el resto de herramientas (bash_exec, file_ops, diag...) las
+# tiene AgentD en el sistema. Asi la voz no duplica cada tool en el formato de
+# Google: pide "haz esto" y AgentD lo ejecuta con su registro completo.
+TOOLS = [{
+    "functionDeclarations": [{
+        "name": "run_in_system",
+        "description": (
+            "Execute an action on the AgentOS system: open an application or the browser, "
+            "inspect or change the network, disks, processes, files or services, install "
+            "packages, run commands, or collect a diagnostic. Use it whenever the user asks "
+            "you to DO something on the machine."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "request": {
+                    "type": "STRING",
+                    "description": "The action to perform, in natural language and in the user's language.",
+                },
+            },
+            "required": ["request"],
+        },
+    }],
+}]
 
 
 def _clave() -> str:
@@ -72,13 +102,16 @@ class GeminiLive:
 
     def __init__(self, api_key: str | None = None, model: str = DEFAULT_MODEL,
                  voice: str = DEFAULT_VOICE, instrucciones: str = SYSTEM_INSTRUCTION,
-                 lang: str = DEFAULT_LANG):
+                 lang: str = DEFAULT_LANG, on_tool_call=None):
         self.key = api_key or _clave()
         self.model = model
         self.voice = voice
         self.lang = lang
         self.instrucciones = instrucciones
         self.ws = None
+        # Se llama cuando el modelo pide ejecutar algo en el sistema. Recibe la
+        # lista de functionCalls; el que la atiende responde con responder_tool().
+        self.on_tool_call = on_tool_call
 
     async def conectar(self):
         import websockets
@@ -93,6 +126,7 @@ class GeminiLive:
                 "speechConfig": speech,
             },
             "systemInstruction": {"parts": [{"text": self.instrucciones}]},
+            "tools": TOOLS,
         }}))
         # el servidor confirma con setupComplete
         for _ in range(10):
@@ -107,6 +141,22 @@ class GeminiLive:
             "turns": [{"role": "user", "parts": [{"text": texto}]}],
             "turnComplete": True}}))
 
+    async def responder_tool(self, llamadas: list, resultado: str) -> None:
+        """Devuelve al modelo el resultado de ejecutar run_in_system.
+
+        `llamadas` es la lista de functionCalls recibida en el toolCall; se
+        responde a cada una con su id (obligatorio) y el texto del resultado.
+        El resultado se recorta: al oido no le hace falta un log de 4000 lineas.
+        """
+        respuestas = []
+        for fc in llamadas:
+            respuestas.append({
+                "id": fc.get("id"),
+                "name": fc.get("name", "run_in_system"),
+                "response": {"result": (resultado or "")[:4000]},
+            })
+        await self.ws.send(json.dumps({"toolResponse": {"functionResponses": respuestas}}))
+
     async def audio(self, pcm: bytes) -> None:
         await self.ws.send(json.dumps({"realtimeInput": {"audio": {
             "data": base64.b64encode(pcm).decode(),
@@ -116,6 +166,14 @@ class GeminiLive:
         """Generador: cede (texto_transcrito, audio_pcm)."""
         async for raw in self.ws:
             msg = json.loads(raw)
+            # El modelo pide EJECUTAR algo en el sistema (function calling).
+            tc = msg.get("toolCall")
+            if tc and self.on_tool_call:
+                try:
+                    await self.on_tool_call(tc.get("functionCalls") or [])
+                except Exception as exc:
+                    logger.warning("fallo atendiendo la tool call: %s", exc)
+                continue
             sc = msg.get("serverContent") or {}
             if sc.get("interrupted"):
                 yield ("[interrumpido]", b"")

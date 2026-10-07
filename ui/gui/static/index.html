@@ -299,6 +299,9 @@ function connect() {
         else if (m.state === "error") { vozOn = false; setState("error"); addTurn("agent", "No encuentro un micrófono con señal."); }
         else { vozOn = false; idle(); }
         break;
+      case "voice_tool":   /* la voz pidio ejecutar algo: lo hace AgentD */
+        setState("thinking"); thinkOn("⚙ " + (m.name || "ejecutando") + "…"); scrollLog();
+        break;
       case "done": {
         const el = current && current.textContent ? current
                  : (m.text ? addTurn("agent", m.text) : null);
