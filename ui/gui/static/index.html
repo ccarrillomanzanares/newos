@@ -53,6 +53,17 @@
   #snd input[type=range]::-moz-range-thumb { width:8px; height:8px; border:0; border-radius:50%;
     background:var(--accent); }
 
+  /* Aviso de problema (persistente hasta que se arregle) */
+  #alert { display:none; align-items:center; gap:10px; margin-top:2vh; max-width:680px;
+    padding:9px 12px; border:1px solid var(--err); border-radius:6px;
+    background:rgba(139,58,58,.12); color:#e0b6b6; font-size:14px; line-height:1.4; }
+  #alert.on { display:flex; }
+  #alert .ico { flex:none; width:17px; height:17px; border-radius:50%; border:1px solid var(--err);
+    color:var(--err); display:flex; align-items:center; justify-content:center; font-size:12px; }
+  #alert button { flex:none; background:none; border:0; color:var(--dim); cursor:pointer;
+    font:inherit; font-size:16px; padding:0 2px; }
+  #alert button:hover { color:var(--fg); }
+
   @keyframes breathe { 0%,100%{transform:scale(.97)} 50%{transform:scale(1.03)} }
   @keyframes spin { to{transform:rotate(360deg)} }
   @keyframes dot { 0%,100%{opacity:.2} 50%{opacity:1} }
@@ -169,6 +180,14 @@
     <input id="sndvol" type="range" min="0" max="100" step="5" value="100"
       aria-label="Volumen" data-hermes-ignore="1">
   </div>
+  <!-- Aviso de problema: el SO DEBE DECIR que algo falla. Antes el orbe se ponia
+       apagado y el error pasaba de largo en el chat. Esto se queda a la vista
+       hasta que el problema se resuelve. -->
+  <div id="alert">
+    <span class="ico">!</span>
+    <span id="alert-txt"></span>
+    <button id="alert-x" aria-label="Ocultar" data-hermes-ignore="1">×</button>
+  </div>
   <div id="log" aria-live="polite"></div>
   <div id="think"><span class="d"></span><span class="d"></span><span class="d"></span><span class="txt">working…</span></div>
   <form id="form" autocomplete="off"><input id="input" placeholder="..." spellcheck="false" autofocus></form>
@@ -254,6 +273,15 @@ function linkify(el) {
   if (img) show(img);
 }
 
+/* ---------- aviso de problema (lo que el SO debe DECIR) ---------- */
+const alertBox = $("alert"), alertTxt = $("alert-txt");
+function alerta(texto) {                 /* muestra o actualiza el aviso */
+  if (!texto) { alertBox.classList.remove("on"); return; }
+  alertTxt.textContent = texto;
+  alertBox.classList.add("on");
+}
+$("alert-x").onclick = () => alertBox.classList.remove("on");
+
 /* ---------- WebSocket ---------- */
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
@@ -264,12 +292,17 @@ function connect() {
   ws.onclose = () => {
     setState("offline"); busy = false; current = null; thinkOff();
     log.querySelectorAll(".confirm, .tool").forEach(n => n.remove()); tools.clear();
+    /* El canal con el agente se ha caido: SE DICE, y se queda a la vista. */
+    alerta("Sin conexión con el agente. Reconectando…");
     setTimeout(connect, 2000);
   };
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     switch (m.type) {
-      case "ready": orb.title = m.llm || ""; shownOffline = false; idle(); break;
+      case "ready":
+        orb.title = m.llm || ""; shownOffline = false; idle();
+        alerta(null);                     /* el agente volvio: se quita el aviso */
+        break;
       case "token": setState("thinking"); agentTurn().textContent += m.text; thinkOn("writing…"); scrollLog(); break;
       case "tool": {
         setState("thinking");
@@ -310,7 +343,11 @@ function connect() {
       }
       case "error":
         setState("error");
-        if (!shownOffline) {              /* solo UNA vez, no en cada reintento */
+        /* SE DICE, y se queda: antes el error pasaba de largo en el chat y el
+           orbe se apagaba sin explicar nada. El usuario tiene que saber que algo
+           va mal sin tener que mirar el log. */
+        alerta(m.text || "El agente ha fallado.");
+        if (!shownOffline) {
           shownOffline = true;
           addTurn("agent", m.text).style.color = "#8b6a6a";
         }
