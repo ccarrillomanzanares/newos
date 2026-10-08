@@ -1,16 +1,25 @@
 #!/bin/sh
-# S70agentos-audio — carga el driver de sonido antes que la interfaz.
+# S70agentos-audio — deja el audio LISTO antes que la interfaz.
 #
-# En una configuracion de kernel generica los drivers son MODULOS, y la autocarga
-# por modalias puede NO disparar (es el mismo fallo, aun sin confirmar, que deja
-# la GPU sin driver). Si el modulo de sonido no esta cargado, no existe /dev/snd
-# y la voz no funciona: ni el micro (arecord) ni el altavoz (aplay).
+# Dos cosas, y las dos hacian falta:
 #
-# Aqui se hace modprobe a mano y se espera a que aparezca la tarjeta. No depende
-# de PulseAudio: la voz lee el micro directamente por ALSA.
+# 1. CARGAR EL DRIVER. En una config de kernel generica los drivers son MODULOS
+#    y la autocarga por modalias puede no disparar (el mismo fallo, aun sin
+#    confirmar, que deja la GPU sin driver). Sin /dev/snd no hay ni micro ni
+#    altavoz.
+#
+# 2. QUITAR EL MUTE. Muchos portatiles arrancan con el altavoz y el micro
+#    SILENCIADOS en el mezclador. Ese era el sintoma "los controles se ven pero
+#    no se oye" y "el volumen no hace nada": subir el control no sirve de nada si
+#    la salida esta en [off]. Se quita el mute de salida Y de entrada.
+#
+# El trabajo fino lo hace ui/voice/audio_ctl.py: los NOMBRES de los controles
+# cambian de una tarjeta a otra (Master/PCM/Speaker/Headphone...), asi que se
+# enumeran y se actua sobre los que existan.
 
 DRIVERS="snd_hda_intel snd_usb_audio snd_hda_codec_realtek snd_hda_codec_generic"
 NAME=agentos-audio
+AGENTOS_HOME=/opt/agentos
 
 start() {
     printf "Iniciando %s: " "$NAME"
@@ -22,17 +31,32 @@ start() {
         sleep 1
         i=$((i+1))
     done
-    if [ -e /dev/snd/controlC0 ]; then
-        printf "[audio ok] "
-        # Desilenciar y subir la captura: muchos portatiles traen el micro en mute
-        # y entonces arecord devuelve silencio (el agente oye nada). Best-effort:
-        # si el control no existe en esta tarjeta, amixer falla y se ignora.
-        amixer -c 0 sset Capture cap 2>/dev/null
-        amixer -c 0 sset Master cap 2>/dev/null
-        amixer -c 0 sset Capture 80% 2>/dev/null
-    else
-        printf "[aviso: sin tarjeta de sonido] "
+
+    if [ ! -e /dev/snd/controlC0 ]; then
+        echo "[aviso: sin tarjeta de sonido] OK"
+        return 0
     fi
+
+    printf "[tarjeta ok] "
+    # Desilenciar salida Y entrada, con el modulo (una sola fuente de verdad).
+    if [ -d "$AGENTOS_HOME" ]; then
+        PYTHONPATH="$AGENTOS_HOME" python3 -c "
+import logging
+from ui.voice import audio_ctl
+logging.basicConfig(level=logging.WARNING)
+hechos = audio_ctl.desilenciar_todo()
+print('[mute quitado: %s] ' % (','.join(hechos) or 'ninguno'), end='')
+" 2>/dev/null
+    fi
+    # Respaldo por si el modulo no estuviera: los controles mas comunes.
+    for c in Master PCM Speaker Headphone Capture Mic; do
+        amixer -c 0 sset "$c" unmute 2>/dev/null
+    done
+    amixer -c 0 sset "Master" 80% 2>/dev/null
+    amixer -c 0 sset "PCM" 80% 2>/dev/null
+    amixer -c 0 sset "Speaker" 80% 2>/dev/null
+    amixer -c 0 sset "Capture" 80% cap 2>/dev/null
+    amixer -c 0 sset "Mic" 80% cap 2>/dev/null
     echo "OK"
 }
 

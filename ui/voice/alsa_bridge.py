@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from .gemini_live import GeminiLive, IN_RATE, OUT_RATE, DEFAULT_VOICE
+from . import audio_ctl
 
 log = logging.getLogger("agentos.voice.alsa")
 
@@ -306,7 +307,16 @@ class AudioBridge:
         # (si no hay altavoz, el texto de la transcripcion sigue saliendo en el chat)
 
     def set_volume(self, vol):
-        """Volumen de la voz, 0-100 (100 = como viene). Se recuerda al reiniciar."""
+        """Volumen 0-100. Se aplica a DOS sitios:
+
+        1. Al MEZCLADOR de la tarjeta (`amixer`) -> afecta a TODO el sonido del
+           sistema, no solo a la voz. Es lo que el usuario espera y lo unico que
+           tambien responde a las teclas de volumen del portatil.
+        2. A la voz del agente (escalando el PCM), que es lo que suena de verdad.
+
+        Antes solo hacia (2): subir el control no cambiaba el sonido real, porque
+        el altavoz estaba silenciado en el mezclador.
+        """
         try:
             v = int(vol)
         except (TypeError, ValueError):
@@ -314,19 +324,43 @@ class AudioBridge:
         self.vol = max(0.0, min(1.0, v / 100.0))
         if self.vol > 0:
             self.mute = False
+        # (1) mezclador real del sistema
+        try:
+            audio_ctl.aplicar(audio_ctl.SALIDA, pct=v, quitar_mute=v > 0)
+            if v == 0:
+                for t in audio_ctl.tarjetas():
+                    for n in audio_ctl.controles(t):
+                        subprocess.run(["amixer", "-c", str(t), "sset", n, "mute"],
+                                       capture_output=True)
+        except Exception as exc:
+            log.warning("no pude ajustar el mezclador: %s", exc)
         _guardar_cfg({"AGENTOS_VOICE_VOLUME": str(v),
                       "AGENTOS_VOICE_MUTE": "0" if not self.mute else "1"})
         return True
 
     def set_mute(self, on):
+        """Silencia/activa TODO el sistema (mezclador) ademas de la voz."""
         self.mute = bool(on)
+        try:
+            for t in audio_ctl.tarjetas():
+                for n in audio_ctl.SALIDA + audio_ctl.ENTRADA:
+                    subprocess.run(["amixer", "-c", str(t), "sset", n,
+                                    "mute" if self.mute else "unmute"], capture_output=True)
+            if not self.mute:
+                audio_ctl.aplicar(audio_ctl.SALIDA, pct=int(self.vol * 100), quitar_mute=True)
+        except Exception as exc:
+            log.warning("no pude silenciar el sistema: %s", exc)
         _guardar_cfg({"AGENTOS_VOICE_MUTE": "1" if self.mute else "0"})
         return True
 
     def ajustes(self):
-        return {"volume": int(round(self.vol * 100)), "mute": self.mute,
-                "active": self.activo, "error": self.error,
-                "mic": " ".join(self.comando_micro or [])}
+        """Estado real: el volumen del MEZCLADOR manda, no el que tengamos guardado."""
+        real = audio_ctl.volumen_actual()
+        mute_real = self.mute or audio_ctl.esta_silenciado()
+        return {"volume": real if real is not None else int(round(self.vol * 100)),
+                "mute": mute_real, "active": self.activo, "error": self.error,
+                "mic": " ".join(self.comando_micro or []),
+                "mixer": bool(audio_ctl.controles())}
 
     # -- micro -------------------------------------------------------------
     async def _bombea_micro(self):

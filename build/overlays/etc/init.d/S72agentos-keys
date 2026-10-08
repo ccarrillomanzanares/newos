@@ -1,0 +1,40 @@
+#!/bin/sh
+# S72agentos-keys — teclas de volumen y brillo del portatil.
+#
+# POR QUE HACE FALTA
+# ------------------
+# En este sistema NO hay acpid ni un demonio de teclas: las teclas de funcion del
+# portatil (volumen, silencio, brillo) generan eventos de entrada que NADIE lee,
+# asi que no hacen nada. En un escritorio normal lo hace el entorno (GNOME, KDE);
+# aqui el entorno es AgentOS y hay que hacerlo nosotros.
+#
+# Se leen los eventos DIRECTAMENTE de /dev/input/event* (no hace falta X ni
+# Wayland) y se traducen a `amixer`. Se usa `evtest` si esta; si no, se lee el
+# binario a mano con python3 (evdev no esta en la imagen).
+#
+# Codigos de tecla (Linux input): VOLUMEN_BAJAR=114  VOLUMEN_SUBIR=115
+# SILENCIO=113. Solo se actua si el evento es de tipo EV_KEY (1) y valor 1
+# (pulsacion), no en la repeticion.
+
+NAME=agentos-keys
+LOG=/var/log/agentos-keys.log
+
+start() {
+    printf "Iniciando %s: " "$NAME"
+    [ -d /dev/input ] || { echo "sin /dev/input"; return 0; }
+    start-stop-daemon -S -q -b -m -p /run/agentos/keys.pid \
+        -x /bin/sh -- -c "exec python3 -c 'import sys; sys.path.insert(0,\"/opt/agentos\"); from ui.voice import keys; keys.bucle()' >> $LOG 2>&1"
+    echo "OK"
+}
+
+stop() {
+    [ -f /run/agentos/keys.pid ] && kill "$(cat /run/agentos/keys.pid)" 2>/dev/null
+    rm -f /run/agentos/keys.pid
+}
+
+case "$1" in
+    start|restart|reload) start ;;
+    stop) stop ;;
+    *) echo "Uso: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0

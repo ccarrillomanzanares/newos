@@ -79,6 +79,12 @@ run alsa-mixer    sh -c 'amixer -c 0 contents 2>&1 | head -200'
 run alsa-modules  sh -c 'lsmod | grep -E "snd|sound" 2>&1; echo; ls -la /dev/snd/ 2>&1'
 run alsa-dmesg    sh -c 'dmesg | grep -iE "snd|hda|audio|alsa|sof" | tail -60'
 run audio-out-test sh -c 'python3 -c "import math,struct,subprocess; pcm=b\"\".join(struct.pack(\"<h\",int(8000*math.sin(2*math.pi*880*i/44100))) for i in range(4410)); p=subprocess.run([\"aplay\",\"-q\",\"-f\",\"S16_LE\",\"-r\",\"44100\",\"-c\",\"1\"],input=pcm,timeout=10); print(\"aplay exit:\",p.returncode)" 2>&1'
+# Si el volumen real del sistema no se puede leer, el control de la interfaz
+# estara mintiendo: se guarda aparte para que salte a la vista.
+run audio-vol-real sh -c 'cd /opt/agentos 2>/dev/null && python3 -c "
+from ui.voice import audio_ctl as a
+print(a.resumen())
+" 2>&1'
 run audio-mic-test sh -c 'python3 - <<"PY"
 import subprocess, wave, struct, math, os
 wav = "/tmp/agentos-diag-mic.wav"
@@ -103,6 +109,10 @@ run voice-ajustes  sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; ec
 run voice-test-out sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; cd /opt/agentos && timeout 40 python3 -m ui.voice.gemini_live --test "Di hola" --out /tmp/voz.wav 2>&1 | tail -8; ls -l /tmp/voz.wav'
 run voice-altavoz   sh -c 'K=/opt/agentos/diag/aios_diag; ls -l "$K" 2>&1; echo "-- altavoces que abre aplay --"; for d in plughw:0,0 hw:0,0 default; do timeout 4 aplay -D "$d" -f S16_LE -r 24000 -c 1 -t raw -q - </dev/zero >/dev/null 2>/tmp/e$$; echo "  -D $d -> rc=$? $(head -1 /tmp/e$$)"; done; rm -f /tmp/e$$'
 run voice-procs    sh -c 'pgrep -af "gemini_live|alsa_bridge|arecord|aplay" 2>&1'
+# Estado REAL del mezclador: si la salida esta en [off], los controles de la
+# interfaz no pueden hacer nada (era el sintoma "subo el volumen y no pasa nada").
+run audio-mezclador sh -c 'echo "== controles =="; amixer -c 0 scontrols 2>&1; echo; for c in Master PCM Speaker Headphone Capture Mic; do echo "-- $c"; amixer -c 0 sget "$c" 2>&1 | tail -3; done'
+run audio-keys     sh -c 'echo "== teclas (sin acpid) =="; ls -la /dev/input/ 2>&1; echo; pgrep -af "keys" 2>&1; echo "== alguien escucha las teclas? =="; cat /var/log/agentos-keys.log 2>&1 | tail -5'
 # Quien TIENE cogido el dispositivo de audio: si PulseAudio lo ocupa, ni aplay
 # ni arecord pueden abrirlo y la voz queda muda aunque los controles se vean.
 run audio-holders  sh -c 'echo "== pulseaudio =="; pgrep -af pulseaudio; echo; echo "== quien tiene /dev/snd abierto =="; (fuser -v /dev/snd/* 2>&1) || (ls -l /proc/*/fd 2>/dev/null | grep -i "snd" | head -20); echo; echo "== estado de los pcm =="; for s in /proc/asound/card*/pcm*/sub*/status; do echo "-- $s"; cat "$s" 2>&1; done'
@@ -113,6 +123,13 @@ run gpu-modules   sh -c 'lsmod | grep -E "i915|amdgpu|vmwgfx|nouveau|drm" 2>&1'
 run gpu-dmesg     sh -c 'dmesg | grep -iE "drm|i915|amdgpu|vmwgfx|fb0|simpledrm" | tail -60'
 run weston        sh -c 'ls -la /run/user/*/wayland-* 2>&1; echo; cat /etc/xdg/weston/weston.ini 2>&1'
 run cog           sh -c 'pgrep -af cog 2>&1; echo; ls -la /usr/lib/cog/modules/ 2>&1'
+# cog/WPE es un navegador completo: lanza VARIOS procesos (el principal + los
+# WebKitWebProcess/WebKitNetworkProcess). Aqui se ve cuanto pesa cada uno y si el
+# consumo se dispara cuando la pagina esta cargada.
+run cog-cpu       sh -c 'echo "== procesos de cog/wpe (CPU%, RSS) =="; ps -eo pid,ppid,pcpu,pmem,rss,comm,args 2>/dev/null | grep -iE "cog|WebKit|WPE" | grep -v grep; echo; echo "== contador =="; pgrep -c -f "cog|WebKit" 2>/dev/null'
+run cog-mem       sh -c 'for p in $(pgrep -f "cog|WebKit"); do printf "pid %s: " "$p"; grep -hE "^(Name|VmRSS|Threads)" /proc/$p/status 2>/dev/null | tr "\n" " "; echo; done'
+run cog-load      sh -c 'cat /proc/loadavg; echo; echo "== CPU por proceso (top 10) =="; top -bn1 2>/dev/null | head -15 || ps -eo pcpu,rss,comm --sort=-pcpu 2>/dev/null | head -11'
+run cog-threads   sh -c 'echo "== hilos por proceso de cog =="; for p in $(pgrep -f "cog|WebKit"); do printf "pid %-8s hilos=%s\n" "$p" "$(cat /proc/$p/status 2>/dev/null | awk "/Threads/{print \$2}")"; done; echo; echo "== tamano de libWPEWebKit =="; ls -lh /usr/lib/libWPEWebKit* 2>&1'
 
 # ── errores del kernel ─────────────────────────────────────────────────
 run dmesg-tail    sh -c 'dmesg | tail -250 2>&1'
