@@ -90,5 +90,20 @@ if [ -f "$TARGET_DIR/etc/init.d/S50weston" ]; then
     echo "post-build: eliminado S50weston de Buildroot (se usa S71weston del overlay)"
 fi
 
+# PulseAudio: FUERA. El paquete de Buildroot instala S50pulseaudio, que arranca
+# `pulseaudio --system` y OCUPA el dispositivo de sonido. Entonces ni `aplay` ni
+# `arecord` (ALSA directo, que es lo que usa la voz) pueden abrirlo:
+#     aplay -D plughw:0,0 -> Device or resource busy
+# y la voz queda MUDA aunque el mezclador este bien. (Paradojico: `paplay`, que
+# si pasa por PulseAudio, si sonaba.)
+#
+# Un SO conversacional no necesita un servidor de sonido de escritorio: la voz
+# usa ALSA directo y los ajustes de volumen van por `amixer`. Menos piezas, menos
+# que se rompa. NO mezclar los dos caminos.
+if [ -f "$TARGET_DIR/etc/init.d/S50pulseaudio" ]; then
+    rm -f "$TARGET_DIR/etc/init.d/S50pulseaudio"
+    echo "post-build: eliminado S50pulseaudio (la voz va por ALSA directo, no por PulseAudio)"
+fi
+
 # boot.img (primer sector BIOS) para genimage
 cp -f "$TARGET_DIR/lib/grub/i386-pc/boot.img" "$BINARIES_DIR/boot.img"
