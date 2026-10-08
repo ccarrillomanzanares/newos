@@ -52,7 +52,10 @@ run ip-route      ip route
 run dns           cat /etc/resolv.conf
 run net-status    sh -c 'nmcli -t device status 2>&1; echo; nmcli -t -f ACTIVE,SSID,SIGNAL device wifi list 2>&1 | head -15'
 run procs         ps -ef
-run environ       sh -c 'cat /proc/1/environ | tr "\0" "\n" 2>/dev/null; echo "--- agentd:"; PID=$(pgrep -f socket_server | head -1); [ -n "$PID" ] && tr "\0" "\n" < /proc/$PID/environ 2>/dev/null'
+# OJO: el entorno de los procesos lleva las CLAVES API en claro. Se REDACTAN los
+# valores de cualquier variable que parezca un secreto (esto ya salio una vez en
+# un diagnostico real: la clave de Gemini y la de Ollama iban en claro).
+run environ       sh -c 'for p in 1 $(pgrep -f socket_server | head -1); do echo "--- pid $p"; tr "\0" "\n" < /proc/$p/environ 2>/dev/null | sed -E "s/^([A-Z_]*(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z_]*)=.*/\1=***REDACTED***/I"; done'
 
 # ── AgentOS: sus procesos y su config ──────────────────────────────────
 run agentos-procs sh -c 'pgrep -af "socket_server|agentos-gui|core.ipc|cog|weston|python3" 2>&1'

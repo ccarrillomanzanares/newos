@@ -437,10 +437,30 @@ def http_response(path: str):
 
 
 def process_request(connection, request):           # API nueva
+    """Sirve HTTP normal; devuelve None para aceptar el handshake WebSocket.
+
+    Detalle importante: si un cliente abre un WebSocket en una ruta que NO es
+    /ws, antes se le respondia con la web (200) y la libreria rechazaba el
+    handshake -> "[gui] connection rejected (200 OK)". Eso llenaba el log (36
+    veces en una prueba) y dejaba al cliente sin canal. Ahora se ACEPTA el
+    WebSocket en cualquier ruta (es el mismo puente) y se deja constancia de
+    cual era, para poder verlo en el diagnostico.
+    """
+    p = urlsplit(request.path).path
+    upgrade = (request.headers.get("Upgrade") or "").lower() == "websocket"
+    if upgrade and p != "/ws":
+        log.warning("WebSocket abierto en una ruta distinta de /ws: '%s' (se acepta igual)", request.path)
+        return None
+    if not upgrade:
+        log.debug("peticion HTTP: %s", request.path)
     return http_response(request.path)
 
 
 async def process_request_legacy(path, request_headers):  # API antigua
+    if (request_headers.get("Upgrade") or "").lower() == "websocket":
+        if urlsplit(path).path != "/ws":
+            log.warning("WebSocket abierto en una ruta distinta de /ws: '%s' (se acepta igual)", path)
+        return None
     return http_response(path)
 
 
