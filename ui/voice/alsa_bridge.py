@@ -122,11 +122,29 @@ def candidatos_captura():
     for idx, _ in tarjetas():
         cmds.append(["arecord", "-D", f"plughw:{idx},0", "-f", "S16_LE",
                      "-r", str(IN_RATE), "-c", "1", "-t", "raw", "-q", "-"])
+        cmds.append(["arecord", "-D", f"hw:{idx},0", "-f", "S16_LE",
+                     "-r", str(IN_RATE), "-c", "1", "-t", "raw", "-q", "-"])
     cmds.append(["arecord", "-D", "default", "-f", "S16_LE",
                  "-r", str(IN_RATE), "-c", "1", "-t", "raw", "-q", "-"])
     if shutil.which("parec"):
         cmds.append(["parec", "--format=s16le", "--rate=%d" % IN_RATE,
                      "--channels=1"])
+    return cmds
+
+
+def candidatos_altavoz():
+    """Dispositivos de SALIDA, de mas a menos preferido.
+
+    OJO con `default`: en esta imagen puede acabar en PulseAudio (que no trae
+    plugin ALSA) y entonces aplay no suena. Se prefieren `plughw:N,0` / `hw:N,0`
+    explicitos, que van DIRECTO al dispositivo de la tarjeta.
+    """
+    cmds = []
+    for idx, _ in tarjetas():
+        cmds.append(["aplay", "-D", f"plughw:{idx},0"])
+        cmds.append(["aplay", "-D", f"hw:{idx},0"])
+    cmds.append(["aplay", "-D", "default"])
+    cmds.append(["aplay"])
     return cmds
 
 
@@ -240,22 +258,29 @@ class AudioBridge:
 
     # -- altavoz -----------------------------------------------------------
     def _abrir_salida(self):
-        """Un `aplay` persistente: se le escriben los trozos segun llegan."""
+        """Un `aplay` persistente. Se PRUEBA cual suena de verdad.
+
+        Antes se usaba `aplay -D default` a ciegas: si `default` cae en
+        PulseAudio (que aqui no trae plugin ALSA), el altavoz queda mudo y nadie
+        se entera. Ahora se prueban los dispositivos y se comprueba que el
+        proceso NO haya muerto (senal de que abrio el dispositivo).
+        """
         if not shutil.which("aplay"):
             return None
-        for dev in ("default", "plughw:0,0"):
-            cmd = ["aplay", "-D", dev, "-f", "S16_LE", "-r", str(OUT_RATE),
-                   "-c", "1", "-t", "raw", "-q", "-"]
+        for base in candidatos_altavoz():
+            cmd = base + ["-f", "S16_LE", "-r", str(OUT_RATE), "-c", "1",
+                          "-t", "raw", "-q", "-"]
             try:
                 p = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                      stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL)
-                time.sleep(0.05)                      # si el dispositivo no existe, muere ya
-                if p.poll() is None:
-                    log.info("altavoz: %s", " ".join(cmd))
-                    return p
+                                     stderr=subprocess.PIPE)
             except OSError:
                 continue
+            time.sleep(0.25)                 # si el dispositivo no existe, muere ya
+            if p.poll() is None:
+                log.info("altavoz: %s", " ".join(cmd))
+                return p
+        log.warning("no he encontrado ningun altavoz que abra (la voz no sonara)")
         return None
 
     def _suena(self, pcm: bytes):

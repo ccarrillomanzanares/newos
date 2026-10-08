@@ -138,6 +138,13 @@ def capabilities_block() -> str:
            " automatically, following whichever language the user uses"),
         f"- Language model for text: {llm or 'configured at startup'}.",
         "- The interface shows your replies as PLAIN TEXT (no markdown).",
+        "- Installed graphical apps: the ONLY web browser is `cog` (WPE/WebKit based) - "
+        "open a page with `cog <url>`; it is NOT Chrome, Chromium or Firefox, and those "
+        "are NOT installed. Terminal: `weston-terminal`. Text editor: `nano` or `vi`. "
+        "Remote access: `ssh`. These are the apps that exist on this system.",
+        "- NEVER claim that a program, service or package is installed without checking "
+        "it first (e.g. `which <program>` or `ls /usr/bin`). Do not invent software: if a "
+        "command fails because something does not exist, say so plainly.",
         "- If a tool returns an empty or incomplete section, say so; do not "
         "invent results and do not contradict yourself.",
     ])

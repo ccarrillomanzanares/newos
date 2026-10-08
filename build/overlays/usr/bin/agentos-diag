@@ -98,6 +98,15 @@ if os.path.exists(wav):
     os.remove(wav)
 PY'
 
+# ── VOZ (el fallo del audio suele estar aqui) ──────────────────────────
+run voice-ajustes  sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; echo "VOZ: $AGENTOS_LIVE_VOICE  MODELO: $AGENTOS_LIVE_MODEL  IDIOMA: [$AGENTOS_LIVE_LANG]  VOLUMEN: $AGENTOS_VOICE_VOLUME  MUTE: $AGENTOS_VOICE_MUTE"'
+run voice-test-out sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; cd /opt/agentos && timeout 40 python3 -m ui.voice.gemini_live --test "Di hola" --out /tmp/voz.wav 2>&1 | tail -8; ls -l /tmp/voz.wav'
+run voice-altavoz   sh -c 'K=/opt/agentos/diag/aios_diag; ls -l "$K" 2>&1; echo "-- altavoces que abre aplay --"; for d in plughw:0,0 hw:0,0 default; do timeout 4 aplay -D "$d" -f S16_LE -r 24000 -c 1 -t raw -q - </dev/zero >/dev/null 2>/tmp/e$$; echo "  -D $d -> rc=$? $(head -1 /tmp/e$$)"; done; rm -f /tmp/e$$'
+run voice-procs    sh -c 'pgrep -af "gemini_live|alsa_bridge|arecord|aplay" 2>&1'
+# Quien TIENE cogido el dispositivo de audio: si PulseAudio lo ocupa, ni aplay
+# ni arecord pueden abrirlo y la voz queda muda aunque los controles se vean.
+run audio-holders  sh -c 'echo "== pulseaudio =="; pgrep -af pulseaudio; echo; echo "== quien tiene /dev/snd abierto =="; (fuser -v /dev/snd/* 2>&1) || (ls -l /proc/*/fd 2>/dev/null | grep -i "snd" | head -20); echo; echo "== estado de los pcm =="; for s in /proc/asound/card*/pcm*/sub*/status; do echo "-- $s"; cat "$s" 2>&1; done'
+
 # ── VIDEO / compositor (orbe) ──────────────────────────────────────────
 run gpu-dri       sh -c 'ls -la /dev/dri/ 2>&1; echo; for c in /sys/class/drm/*/status; do echo -n "$c: "; cat "$c" 2>&1; done'
 run gpu-modules   sh -c 'lsmod | grep -E "i915|amdgpu|vmwgfx|nouveau|drm" 2>&1'
@@ -137,13 +146,25 @@ rm -rf "$OUT"
 
 echo "Bundle: $BUNDLE ($(du -h "$BUNDLE" 2>/dev/null | cut -f1))"
 
-# ── subir (si hay clave y red) ─────────────────────────────────────────
+# ── subir ───────────────────────────────────────────────────────────────
+# ANTES: `rsync ... 2>/dev/null` OCULTABA el error, asi que un fallo de subida
+# era invisible: en el log de la VPS se veia la conexion y el fichero no
+# llegaba, sin saber por que. Ahora el error SE VE (lo devuelve la tool).
+# La cuenta 'diag' acepta SOLO rsync (rrsync viene forzado en el sshd), asi que
+# un 'scp' no serviria: el reintento tambien es rsync, mas simple.
 if [ "$UPLOAD" = 1 ] && [ -f "$DIAG_KEY" ]; then
-    if rsync -e "ssh -i '$DIAG_KEY' -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15" \
-              "$BUNDLE" "$DIAG_USER@$DIAG_HOST:./" 2>/dev/null; then
+    SSHC="ssh -i $DIAG_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+    if rsync -e "$SSHC" -av "$BUNDLE" "$DIAG_USER@$DIAG_HOST:./" 2>/tmp/agentos-diag-upload.err; then
         echo "Subido a $DIAG_USER@$DIAG_HOST (solo escritura)"
     else
-        echo "No se pudo subir (clave o red?). El bundle queda en $BUNDLE"
+        echo "rsync fallo. Reintento simple..."
+        if rsync -e "$SSHC" "$BUNDLE" "$DIAG_USER@$DIAG_HOST:" 2>>/tmp/agentos-diag-upload.err; then
+            echo "Subido a $DIAG_USER@$DIAG_HOST (reintento)"
+        else
+            echo "FALLO LA SUBIDA. Error de rsync:"
+            sed 's/^/    /' /tmp/agentos-diag-upload.err
+            echo "Bundle local: $BUNDLE"
+        fi
     fi
 elif [ "$UPLOAD" = 1 ]; then
     echo "Sin clave de subida ($DIAG_KEY). Bundle local: $BUNDLE"
