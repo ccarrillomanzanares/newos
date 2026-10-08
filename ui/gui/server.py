@@ -213,7 +213,7 @@ def voice_config():
                 k, v = line.split("=", 1)
                 cfg[k.strip()] = v.strip().strip("'\"")
     return {"key": cfg.get("AGENTOS_GEMINI_API_KEY", ""),
-            "model": cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview"),
+            "model": cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.8-live"),
             "voice": cfg.get("AGENTOS_LIVE_VOICE", "Leda")}
 
 

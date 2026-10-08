@@ -32,7 +32,7 @@ logger = logging.getLogger("agentos.voice.gemini")
 
 WS_URL = ("wss://generativelanguage.googleapis.com/ws/"
           "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
-DEFAULT_MODEL = os.environ.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+DEFAULT_MODEL = os.environ.get("AGENTOS_LIVE_MODEL", "gemini-3.8-live")
 DEFAULT_VOICE = os.environ.get("AGENTOS_LIVE_VOICE", "Leda")   # Leda = femenina, juvenil
 # Idioma de SALIDA (BCP-47). Es lo que fija el ACENTO. VACIO = automatico: el
 # modelo sigue el idioma del usuario (asi el SO sirve en cualquier pais). Solo
@@ -112,14 +112,20 @@ class GeminiLive:
         # Se llama cuando el modelo pide ejecutar algo en el sistema. Recibe la
         # lista de functionCalls; el que la atiende responde con responder_tool().
         self.on_tool_call = on_tool_call
+        # Google CORTA la sesion de voz: la conexion dura ~10 min y el audio sin
+        # comprimir ~15 min. Guardando el "handle" del servidor se puede REANUDAR
+        # la conversacion en una conexion nueva, sin perder el hilo.
+        self.handle: str | None = None
+        self.go_away = False        # el servidor avisa de que va a cerrar
 
     async def conectar(self):
         import websockets
+        self.go_away = False
         self.ws = await websockets.connect(f"{WS_URL}?key={self.key}", max_size=None)
         speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self.voice}}}
         if self.lang:
             speech["languageCode"] = self.lang      # fija el ACENTO (p.ej. es-ES)
-        await self.ws.send(json.dumps({"setup": {
+        config = {
             "model": f"models/{self.model}",
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
@@ -127,7 +133,20 @@ class GeminiLive:
             },
             "systemInstruction": {"parts": [{"text": self.instrucciones}]},
             "tools": TOOLS,
-        }}))
+            # COMPRESION DEL CONTEXTO: sin ella el audio sin comprimir topa a los
+            # 15 minutos y la sesion se corta ("no valen 15 minutos"). Comprimiendo,
+            # la sesion puede durar INDEFINIDAMENTE. Ademas gasta menos cupo, que
+            # en el plan gratuito importa.
+            "contextWindowCompression": {
+                "triggerTokens": 20000,          # cuando comprimir
+                "slidingWindow": {"targetTokens": 4000},   # cuanto conservar
+            },
+        }
+        # Sin esto, a los ~10 min se cae la CONEXION; con el handle, la sesion
+        # sobrevive a la reconexion.
+        if self.handle:
+            config["sessionResumption"] = {"handle": self.handle}
+        await self.ws.send(json.dumps({"setup": config}))
         # el servidor confirma con setupComplete
         for _ in range(10):
             msg = json.loads(await asyncio.wait_for(self.ws.recv(), timeout=30))
@@ -166,6 +185,16 @@ class GeminiLive:
         """Generador: cede (texto_transcrito, audio_pcm)."""
         async for raw in self.ws:
             msg = json.loads(raw)
+            # El servidor avisa de que va a CERRAR la sesion (~10 min): hay que
+            # reconectar con el handle para seguir la conversacion.
+            if msg.get("goAway"):
+                self.go_away = True
+                yield ("[reconectar]", b"")
+                return
+            # Handle nuevo para poder reanudar la sesion en otra conexion.
+            sru = msg.get("sessionResumptionUpdate") or {}
+            if sru.get("resumable") and sru.get("newHandle"):
+                self.handle = sru["newHandle"]
             # El modelo pide EJECUTAR algo en el sistema (function calling).
             tc = msg.get("toolCall")
             if tc and self.on_tool_call:

@@ -44,6 +44,10 @@ from . import audio_ctl
 
 log = logging.getLogger("agentos.voice.alsa")
 
+
+class _Reconectar(Exception):
+    """Señal interna: Google ha avisado de que corta la sesion de voz."""
+
 # Cuantos segundos de senal se piden al micro para decidir si ese dispositivo
 # funciona de verdad (no basta con que el comando exista: hay que oir bytes).
 PROBE_SECONDS = 1.0
@@ -468,6 +472,13 @@ class AudioBridge:
 
     # -- respuestas --------------------------------------------------------
     async def _bombea_modelo(self):
+        """Lee del modelo y, si Google corta la sesion, RECONECTA y sigue.
+
+        Google limita la sesion de voz (conexion ~10 min, audio ~15 min) y avisa
+        con un mensaje `goAway`. Antes eso terminaba la voz en silencio ("se queda
+        sin hablar al cabo de un rato"): ahora se reanuda con el handle de
+        resumption, sin perder el hilo de la conversacion.
+        """
         while self._vivo:
             try:
                 async for t, a in self.g.frases():
@@ -475,13 +486,48 @@ class AudioBridge:
                         self._suena(a)
                     if t == "[fin]":
                         self._texto("", True)
+                    elif t == "[reconectar]":
+                        raise _Reconectar()
                     elif t and t != "[interrumpido]":
                         self._texto(t)
             except asyncio.CancelledError:
                 raise
+            except _Reconectar:
+                if not self._vivo:
+                    return
+                log.info("la sesion de voz caduco: reconectando (handle=%s)", bool(self.g.handle))
+                self._texto("(un momento, sigo aquí)", True)
+                if await self._reconectar():
+                    continue
+                self._estado("error")
+                return
             except Exception as exc:
                 log.warning("se corto la lectura del modelo: %s", exc)
-                break
+                if not self._vivo:
+                    return
+                await asyncio.sleep(1.0)
+                if await self._reconectar():
+                    continue
+                self._estado("error")
+                return
+
+    async def _reconectar(self, intentos=3) -> bool:
+        """Reanuda la sesion de voz con el handle guardado."""
+        for n in range(intentos):
+            if not self._vivo:
+                return False
+            try:
+                await self.g.cerrar()
+            except Exception:
+                pass
+            try:
+                await self.g.conectar()          # reusa self.handle
+                log.info("sesion de voz reanudada (intento %d)", n + 1)
+                return True
+            except Exception as exc:
+                log.warning("no pude reanudar la voz (%d/%d): %s", n + 1, intentos, exc)
+                await asyncio.sleep(2.0 * (n + 1))
+        return False
 
     # -- ciclo de vida -----------------------------------------------------
     async def start(self) -> bool:

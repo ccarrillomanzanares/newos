@@ -121,7 +121,7 @@ def capabilities_block() -> str:
     except OSError:
         pass
     voz = cfg.get("AGENTOS_LIVE_VOICE", "Leda")
-    modelo_live = cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+    modelo_live = cfg.get("AGENTOS_LIVE_MODEL", "gemini-3.8-live")
     llm = cfg.get("AGENTOS_OPENAI_MODEL", "")
     idioma = cfg.get("AGENTOS_LIVE_LANG", "")
     return "\n".join([

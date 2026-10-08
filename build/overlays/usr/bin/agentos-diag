@@ -106,7 +106,11 @@ PY'
 
 # ── VOZ (el fallo del audio suele estar aqui) ──────────────────────────
 run voice-ajustes  sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; echo "VOZ: $AGENTOS_LIVE_VOICE  MODELO: $AGENTOS_LIVE_MODEL  IDIOMA: [$AGENTOS_LIVE_LANG]  VOLUMEN: $AGENTOS_VOICE_VOLUME  MUTE: $AGENTOS_VOICE_MUTE"'
-run voice-test-out sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; cd /opt/agentos && timeout 40 python3 -m ui.voice.gemini_live --test "Di hola" --out /tmp/voz.wav 2>&1 | tail -8; ls -l /tmp/voz.wav'
+# OJO: NO se llama al modelo de voz aqui. El diagnostico se puede pedir muchas
+# veces y cada llamada gasta CUOTA del LLM de voz (y puede agotarla). Se
+# comprueba lo que hace falta para que funcione, sin gastar nada. Si de verdad
+# se quiere probar el modelo, se pide a mano con --test.
+run voice-test-out sh -c 'set -a; . /etc/default/agentos 2>/dev/null; set +a; echo "clave Gemini: $([ -n "$AGENTOS_GEMINI_API_KEY" ] && echo presente || echo AUSENTE)"; echo "modelo: $AGENTOS_LIVE_MODEL  voz: $AGENTOS_LIVE_VOICE"; echo "websockets: $(python3 -c "import websockets; print(websockets.__version__)" 2>&1)"; echo "(no se llama al modelo: gastaria cuota)"'
 run voice-altavoz   sh -c 'K=/opt/agentos/diag/aios_diag; ls -l "$K" 2>&1; echo "-- altavoces que abre aplay --"; for d in plughw:0,0 hw:0,0 default; do timeout 4 aplay -D "$d" -f S16_LE -r 24000 -c 1 -t raw -q - </dev/zero >/dev/null 2>/tmp/e$$; echo "  -D $d -> rc=$? $(head -1 /tmp/e$$)"; done; rm -f /tmp/e$$'
 run voice-procs    sh -c 'pgrep -af "gemini_live|alsa_bridge|arecord|aplay" 2>&1'
 # Estado REAL del mezclador: si la salida esta en [off], los controles de la

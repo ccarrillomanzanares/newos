@@ -678,7 +678,7 @@ const AgentVoice = (function () {
     on = true;
     ws = new WebSocket(WS_URL + "?key=" + encodeURIComponent(opts.key));
     ws.onopen = () => ws.send(JSON.stringify({ setup: {
-      model: "models/" + (opts.model || "gemini-3.1-flash-live-preview"),
+      model: "models/" + (opts.model || "gemini-3.8-live"),
       generationConfig: { responseModalities: ["AUDIO"], speechConfig: {
         voiceConfig: { prebuiltVoiceConfig: { voiceName: opts.voice || "Leda" } } } },
       systemInstruction: { parts: [{ text: opts.instruction || "" }] },
