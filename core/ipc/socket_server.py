@@ -181,6 +181,20 @@ class AgentServer:
         # poder responder a la interfaz en vez de dejarla sin explicación.
         self.error = error
         self._server: asyncio.AbstractServer | None = None
+        # Conexiones vivas: hacen falta para AVISAR cuando la IA vuelve (la
+        # interfaz debe poder quitar el aviso de "no disponible" sola).
+        self._clientes: set[ClientConnection] = set()
+
+    async def avisar_listo(self) -> None:
+        """Dice a los clientes conectados que la IA ya está disponible."""
+        llm = self.agent.llm.name if (self.agent and self.agent.llm) else None
+        for c in list(self._clientes):
+            try:
+                # Se manda como "hello" para que el puente lo traduzca a "ready"
+                # (es el mismo evento que cuando el cliente se conecta).
+                await c.send({"type": "hello", "llm": llm, "session_id": c.session_id})
+            except Exception:  # noqa: BLE001
+                pass
 
     async def start(self) -> None:
         if self.agent is not None:
@@ -207,7 +221,12 @@ class AgentServer:
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
             return
-        await ClientConnection(self.agent, reader, writer).run()
+        conn = ClientConnection(self.agent, reader, writer)
+        self._clientes.add(conn)
+        try:
+            await conn.run()
+        finally:
+            self._clientes.discard(conn)
         logger.info("Cliente desconectado")
 
     async def stop(self) -> None:
@@ -290,6 +309,10 @@ async def serve(config: AgentConfig, pidfile: Path | None = None) -> None:
     # deja que la interfaz arranque y lo diga en pantalla. Antes, sin backend, el
     # proceso moría aquí y la GUI se quedaba sin arrancar — el SO entero se
     # quedaba en negro por un fallo del modelo.
+    #
+    # Y si no está, SE REINTENTA cada pocos segundos: al arrancar el SO la red
+    # tarda mas que el agente (el backend es remoto), asi que el agente se inicia
+    # sin IA y esta aparece sola cuando hay conexion, sin reiniciar nada.
     agent: Agent | None = None
     agent_error: str | None = None
     try:
@@ -305,6 +328,18 @@ async def serve(config: AgentConfig, pidfile: Path | None = None) -> None:
         pidfile.parent.mkdir(parents=True, exist_ok=True)
         pidfile.write_text(str(os.getpid()))
 
+    # Reintento periodico del LLM (solo si hay agente pero le falta la IA).
+    reintento: asyncio.Task[None] | None = None
+    if agent is not None and agent.llm is None:
+        async def _reintentar() -> None:
+            while True:
+                await asyncio.sleep(5)
+                if await agent.intentar_llm():
+                    logger.info("IA reconectada: %s", agent.llm.name if agent.llm else "?")
+                    await server.avisar_listo()
+                    return
+        reintento = asyncio.create_task(_reintentar())
+
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -313,6 +348,8 @@ async def serve(config: AgentConfig, pidfile: Path | None = None) -> None:
     logger.info("AgentD en ejecución", extra={"pid": os.getpid()})
     await stop_event.wait()
     logger.info("Deteniendo AgentD")
+    if reintento is not None:
+        reintento.cancel()
     await server.stop()
     if pidfile:
         with contextlib.suppress(FileNotFoundError):

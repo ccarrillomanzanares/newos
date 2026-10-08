@@ -103,19 +103,41 @@ class Agent:
         )
         self._sessions: dict[str, WorkingMemory] = {}
         self._started = False
+        # Motivo por el que no hay LLM (para poder decirlo en pantalla).
+        self.llm_error: str | None = None
 
     # ---------------------------------------------------------------- ciclo de vida
     async def start(self) -> None:
-        """Inicializa la base de datos y el LLM (si no se inyectó uno)."""
+        """Inicializa la base de datos y el LLM (si no se inyectó uno).
+
+        IMPORTANTE: el agente arranca AUNQUE no haya LLM. El SO se inicia antes
+        que la red y el backend es remoto (Ollama Cloud), asi que al principio no
+        se le encuentra: antes eso MATABA a AgentD y habia que reiniciar el
+        servicio entero. Ahora se arranca igual, se recuerda el motivo y se
+        reintenta (ver intentar_llm).
+        """
         if self._started:
             return
         self.config.ensure_dirs()
         await self.episodic.init()
-        if self.llm is None:
-            self.llm = await create_engine(self.config)
-        logger.info("AgentD listo", extra={"llm": self.llm.name, "tools": self.registry.names(),
-                                           "mode": self.config.mode})
         self._started = True
+        await self.intentar_llm()
+
+    async def intentar_llm(self) -> bool:
+        """Crea el motor del LLM. Se puede llamar otra vez para reintentar."""
+        if self.llm is not None:
+            return True
+        try:
+            self.llm = await create_engine(self.config)
+            self.llm_error = None
+            logger.info("AgentD listo", extra={"llm": self.llm.name, "tools": self.registry.names(),
+                                               "mode": self.config.mode})
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self.llm = None
+            self.llm_error = str(exc)
+            logger.warning("sin backend LLM todavia: %s", exc)
+            return False
 
     async def close(self) -> None:
         if self.llm is not None:
@@ -163,7 +185,17 @@ class Agent:
                      confirm: ConfirmCallback | None = None) -> AsyncIterator[AgentEvent]:
         """Loop ReAct completo como generador asíncrono de eventos."""
         await self.start()
-        assert self.llm is not None
+        if self.llm is None:
+            # El SO ya esta en marcha pero la IA aun no: se reintenta una vez por
+            # si la red ya esta lista y, si no, SE DICE (no se revienta).
+            await self.intentar_llm()
+        if self.llm is None:
+            msg = ("La IA no está disponible todavía. Estoy reintentando la conexión; "
+                   "en unos segundos podrás hablar conmigo.")
+            logger.warning("mensaje rechazado: sin LLM (%s)", self.llm_error)
+            yield AgentEvent("error", {"message": msg})
+            yield AgentEvent("final", {"text": "", "iterations": 0})
+            return
         confirm = confirm or self.confirm_callback
         wm = await self.get_working_memory(session_id)
         text = text.strip()

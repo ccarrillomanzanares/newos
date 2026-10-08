@@ -170,14 +170,31 @@ class OpenAICompatBackend(LLMBackend):
         return f"openai:{self.model}@{self.base_url}"
 
     @staticmethod
-    async def is_available(base_url: str, timeout: float = 2.0) -> bool:
+    async def is_available(base_url: str, timeout: float = 5.0) -> bool:
+        """¿Se puede hablar con el backend? Devuelve True/False.
+
+        OJO: el timeout es CORTO a proposito (es una sonda), pero 2 s era
+        demasiado agresivo: al arrancar, con la WiFi recien levantada, una
+        respuesta lenta se tomaba por "servidor no disponible" y el mensaje no
+        distinguia "no hay red" de "ha tardado un poco". Ahora se REGISTRA el
+        motivo real para poder verlo en el diagnostico.
+        """
         import httpx
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.get(f"{base_url.rstrip('/')}/models")
-                return resp.status_code < 500
-        except httpx.HTTPError:
+                if resp.status_code >= 500:
+                    logger.warning("sonda LLM: HTTP %s en %s", resp.status_code, base_url)
+                    return False
+                return True
+        except httpx.TimeoutException as exc:
+            logger.warning("sonda LLM: TIMEOUT (%.0fs) en %s: %s", timeout, base_url, exc)
+            return False
+        except httpx.HTTPError as exc:
+            # Aqui cae lo tipico al arrancar: no hay ruta, o el DNS aun no
+            # resuelve. Se registra el tipo exacto para diagnosticarlo.
+            logger.warning("sonda LLM: %s en %s: %s", type(exc).__name__, base_url, exc)
             return False
 
     async def stream_chat(self, messages: list[Message], params: GenerationParams) -> AsyncIterator[str]:
